@@ -1,0 +1,293 @@
+XC7S50 CLOCK DISTRIBUTION NETWORK — COMPLETE TOPOLOGY
+═══════════════════════════════════════════════════════════════════════════════
+Process: TSMC 28nm HPL  |  6 Clock Regions (2 col × 3 row)  |  32 BUFG total
+───────────────────────────────────────────────────────────────────────────────
+
+EXTERNAL SOURCES
+────────────────
+  Crystal/Oscillator          Differential Pair (LVDS)
+  (single-ended)              (e.g. 200MHz REFCLK)
+       │                              │
+       ▼                              ▼
+  ┌─────────┐                  ┌──────────┐
+  │  IBUF   │                  │  IBUFDS  │
+  │ (HR IOB)│                  │ (HR IOB) │
+  └────┬────┘                  └────┬─────┘
+       │                            │
+       │          ┌─────────────────┘
+       │          │
+       ▼          ▼
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │                   CMT COLUMN  (5 MMCMs + 5 PLLs on XC7S50)             │
+  │                                                                         │
+  │  ┌──────────────────────────┐    ┌────────────────────────────────┐    │
+  │  │      MMCME2_BASE/ADV     │    │        PLLE2_BASE/ADV          │    │
+  │  │  ┌────────────────────┐  │    │  ┌──────────────────────────┐  │    │
+  │  │  │ Phase Detector     │  │    │  │ Phase Detector           │  │    │
+  │  │  │ Loop Filter        │  │    │  │ Loop Filter              │  │    │
+  │  │  │ VCO 600-1600MHz    │  │    │  │ VCO 600-1600MHz          │  │    │
+  │  │  │ CLKOUT0 (frac÷)   │  │    │  │ CLKOUT0..5 (int÷ only)   │  │    │
+  │  │  │ CLKOUT1..6 (int÷) │  │    │  │ Lower jitter than MMCM   │  │    │
+  │  │  │ Dynamic phase shift│  │    │  │ No fractional divide      │  │    │
+  │  │  │ Spread spectrum    │  │    │  └──────────────────────────┘  │    │
+  │  │  └─────────┬──────────┘  │    │              │                 │    │
+  │  └────────────┼─────────────┘    └──────────────┼─────────────────┘    │
+  │               │ CLKOUTn (raw,                    │                      │
+  │               │  unbuffered — MUST buffer)        │                      │
+  └───────────────┼──────────────────────────────────┼──────────────────────┘
+                  │                                   │
+                  └──────────────┬────────────────────┘
+                                 │
+                                 ▼
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │                    GLOBAL CLOCK BUFFER BANK                              │
+  │                    32 × BUFG available on XC7S50                        │
+  │                    Max 12 active per clock region simultaneously         │
+  │                                                                          │
+  │   BUFG          BUFGCE          BUFGMUX_CTRL      BUFGCTRL              │
+  │  ┌──────┐      ┌──────────┐    ┌──────────────┐  ┌──────────────────┐  │
+  │  │ CLK  │      │ CLK  CE  │    │ I0  I1   SEL │  │ Fully generalized│  │
+  │  │  in  │      │  in  ┤   │    │  in  in   ┤  │  │ 2-input clock mux│  │
+  │  │  ↓   │      │  ↓   gate│    │  ↓   ↓    mux│  │ with CE/ignore   │  │
+  │  │ out  │      │  out     │    │      out     │  │                  │  │
+  │  └──┬───┘      └────┬─────┘    └──────┬───────┘  └────────┬─────────┘  │
+  │     │              │                  │                    │            │
+  │  Full chip    CE must be         Glitch-free          Most flexible     │
+  │  low skew     synchronous!       switching            (use for MUX)     │
+  │  <200ps       Partial pulse      requires              with IGNORE       │
+  │               = corruption       careful timing                          │
+  └──────────────────────────────────────┬───────────────────────────────────┘
+                                         │
+                                         │  GLOBAL CLOCK NETWORK
+                                         │  (H-Tree copper routing)
+                                         ▼
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║                    H-TREE ROOT (CLOCK DISTRIBUTION SPINE)               ║
+  ║                                                                          ║
+  ║   Physical design: balanced binary tree — equal electrical path length   ║
+  ║   to every leaf node.  Skew < 200ps across entire die.                  ║
+  ║   Clock routing does NOT use PIPs — hardwired copper.                   ║
+  ╚════════════════════╤═════════════════════════════╤════════════════════════╝
+                       │                             │
+           ┌───────────┘                             └───────────┐
+           │                                                     │
+           ▼                                                     ▼
+  ┌─────────────────┐                                 ┌─────────────────┐
+  │   LEFT COLUMN   │                                 │  RIGHT COLUMN   │
+  │  CLOCK SPINE    │                                 │  CLOCK SPINE    │
+  └────────┬────────┘                                 └────────┬────────┘
+           │                                                   │
+    ┌──────┴──────┐                                     ┌──────┴──────┐
+    │             │                                     │             │
+    ▼             ▼                                     ▼             ▼
+  [HROW 2]     [HROW 2]                             [HROW 2]     [HROW 2]
+    │             │                                     │             │
+    ▼             ▼                                     ▼             ▼
+  [HROW 1]     [HROW 1]                             [HROW 1]     [HROW 1]
+    │             │                                     │             │
+    ▼             ▼                                     ▼             ▼
+  [HROW 0]     [HROW 0]                             [HROW 0]     [HROW 0]
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  XC7S50 FLOORPLAN — 6 CLOCK REGIONS (2 columns × 3 rows)
+  Each region bounded by HROW at vertical midpoint
+═══════════════════════════════════════════════════════════════════════════════
+
+                    LEFT COLUMN              RIGHT COLUMN
+                 ┌───────────────┐        ┌───────────────┐
+                 │               │        │               │
+                 │  REGION [1,2] │        │  REGION [0,2] │   ROW 2 (TOP)
+                 │  CLB/DSP/BRAM │        │  CLB/DSP/BRAM │
+                 │               │        │               │
+  HROW 2 ───────┼───────────────┼────────┼───────────────┼──── (horizontal
+                 │               │        │               │      clock row)
+                 │  REGION [1,1] │        │  REGION [0,1] │   ROW 1 (MID)
+                 │  CLB/DSP/BRAM │        │  CLB/DSP/BRAM │
+                 │               │        │               │
+  HROW 1 ───────┼───────────────┼────────┼───────────────┼────
+                 │               │        │               │
+                 │  REGION [0,0] │        │  REGION [1,0] │   ROW 0 (BOT)
+                 │  CLB/DSP/BRAM │        │  CLB/DSP/BRAM │
+                 │               │        │               │
+  HROW 0 ───────┼───────────────┼────────┼───────────────┼────
+                 │    IOB/CMT    │        │    IOB/CMT    │
+                 └───────────────┘        └───────────────┘
+
+  ↑ CMT column runs vertically alongside CLB columns
+  ↑ BUFG/BUFR outputs feed into the HROW for their row
+  ↑ HROW distributes horizontally across both CLB columns at that row
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  SINGLE CLOCK REGION — INTERNAL DISTRIBUTION DETAIL
+═══════════════════════════════════════════════════════════════════════════════
+
+  From BUFG H-Tree
+       │
+       ▼
+  ════════════════════════════════════════════════════════
+        HROW  (Horizontal Clock Row — at region midpoint)
+  ════════════════════════════════════════════════════════
+       │                              │
+       │ (left half of region)        │ (right half of region)
+       ▼                              ▼
+  ┌─────────────┐              ┌─────────────┐
+  │ CLOCK SPINE │              │ CLOCK SPINE │
+  │ (vertical)  │              │ (vertical)  │
+  └──────┬──────┘              └──────┬──────┘
+         │ runs N                     │ runs S
+         │ through                    │ through
+         │ CLB rows                   │ CLB rows
+         │                            │
+         ├── CLB row N   ←── clock tap (hardwired, NOT a PIP)
+         ├── CLB row N-1 ←── clock tap
+         ├── CLB row N-2 ←── clock tap
+         │   ...
+         ├── CLB row 1   ←── clock tap
+         └── CLB row 0   ←── clock tap
+
+  Each clock tap feeds ALL FFs in that CLB row directly.
+  This path uses dedicated hardwired metal — no routing PIPs.
+  Total path: BUFG → H-Tree → HROW → Spine → tap → FF clock pin
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  REGIONAL CLOCKING — BUFR / BUFIO / BUFMR
+  (Do not consume global BUFG resources)
+═══════════════════════════════════════════════════════════════════════════════
+
+  External           MMCM/PLL
+  diff pair          output
+      │                 │
+      ▼                 │
+  ┌────────┐            │
+  │ IBUFDS │            │
+  │ IBUFG  │            │
+  └───┬────┘            │
+      │                 │
+      ▼                 ▼
+  ┌──────────────────────────────────────────────────────┐
+  │  REGIONAL CLOCK RESOURCES (per I/O bank / CMT tile) │
+  │                                                      │
+  │  ┌───────┐   ┌───────┐   ┌────────┐                 │
+  │  │ BUFIO │   │ BUFR  │   │ BUFMR  │                 │
+  │  │       │   │       │   │        │                 │
+  │  │ I/O   │   │ Divides│  │ Multi- │                 │
+  │  │ clock │   │ ÷1..8  │  │ region │                 │
+  │  │ only  │   │ int    │  │ fanout │                 │
+  │  │ OLOGIC│   │ CLB+IO │  │ source │                 │
+  │  │ ILOGIC│   │ one    │  │        │                 │
+  │  │ only  │   │ region │  │        │                 │
+  │  └───┬───┘   └───┬───┘   └───┬────┘                 │
+  │      │           │           │                       │
+  └──────┼───────────┼───────────┼───────────────────────┘
+         │           │           │
+         ▼           ▼           └──→ (to BUFRs in adjacent regions)
+     ILOGIC/      CLB FFs
+     OLOGIC        in this
+     only          region
+                   only
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  CONSTRAINT REFERENCE — WHAT IS AND IS NOT LEGAL
+═══════════════════════════════════════════════════════════════════════════════
+
+  BUFG  ──drives──▶  any FF on entire device           ✓ LEGAL
+  BUFG  ──drives──▶  any BRAM/DSP clock input          ✓ LEGAL
+  BUFR  ──drives──▶  FFs in same clock region           ✓ LEGAL
+  BUFR  ──drives──▶  FFs in different clock region      ✗ ILLEGAL (DRC)
+  BUFIO ──drives──▶  ILOGIC/OLOGIC in same bank         ✓ LEGAL
+  BUFIO ──drives──▶  CLB FFs                            ✗ ILLEGAL
+  MMCM  ──drives──▶  fabric directly (no BUFG)          ✗ ILLEGAL / bad skew
+  >12 BUFGs active in one region simultaneously         ✗ DRC: CLOCK-012
+  CLK routed through INT fabric (no BUFG)               ✗ ns-level skew
+
+  BUFGCE.CE changes asynchronously                      ✗ GLITCH risk
+  BUFGCE.CE changes synchronous, clock low               ✓ GLITCH-FREE
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  CLOCK DOMAIN CROSSING SUMMARY (at the tree level)
+═══════════════════════════════════════════════════════════════════════════════
+
+  clk_A (BUFG0)     clk_B (BUFG1)
+       │                  │
+       ▼                  ▼
+  ┌─────────┐        ┌─────────┐
+  │  FF_src │        │ sync_ff1│ ← (* ASYNC_REG = "true" *)
+  └────┬────┘        └────┬────┘    Must be in same SLICE
+       │  async            │        as sync_ff2
+       │  crossing         ▼        Maximizes T_resolve
+       └─────────────▶┌─────────┐
+    set_false_path     │ sync_ff2│ ← (* ASYNC_REG = "true" *)
+    on this crossing   └────┬────┘
+                            │
+                            ▼
+                       safe data
+                       in clk_B domain
+
+  MTBF formula:
+  MTBF = (T_CLK / (f_data × T_W)) × e^(T_resolve / τ)
+  
+  At 200MHz, τ=35ps, T_W=60ps, f_data=100MHz:
+  T_resolve = 5ns - 1ns = 4ns
+  MTBF ≈ 2.9 × 10^49 seconds  (effectively infinite)
+  → Two-FF synchronizer is universally sufficient
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  STARTUP SEQUENCE (power-on clock behavior)
+═══════════════════════════════════════════════════════════════════════════════
+
+  1. VCCAUX powers up (1.8V)                ← must be first or simultaneous
+  2. VCCINT + VCCBRAM power up (1.0V)
+  3. VCCO banks power up (1.2-3.3V)
+  4. Configuration loads (CCLK active, CFGMCLK ~65MHz available via STARTUPE2)
+  5. MMCM/PLL starts, VCO ramps up
+  6. LOCKED asserts  ← ONLY now is output clock frequency correct
+  7. Release reset to all downstream logic
+  8. EOS (End of Startup) via STARTUPE2
+  9. Normal operation
+
+  !! Assert reset on ALL logic clocked by MMCM/PLL outputs until LOCKED = 1 !!
+  !! Before LOCKED: output frequency is undefined — could be 0, partial, or glitching !!
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  DELAY BUDGET — END TO END
+═══════════════════════════════════════════════════════════════════════════════
+
+  Stage                                         Typical delay
+  ─────────────────────────────────────────────────────────────
+  Crystal pad → IBUF                            0.5 – 1.0 ns
+  IBUF → MMCM CLKIN1                            0.1 – 0.3 ns
+  MMCM internal (CLKIN → CLKOUT, locked)        phase defined
+  MMCM CLKOUT → BUFG input                      0.1 – 0.3 ns
+  BUFG input → H-Tree root                      0.2 – 0.5 ns
+  H-Tree root → HROW                            balanced, ≈equal per region
+  HROW → Clock Spine                            0.1 – 0.2 ns
+  Clock Spine → FF clock pin                    0.05 – 0.2 ns
+  ─────────────────────────────────────────────────────────────
+  Chip-wide skew (FF to FF, same BUFG)          < 200 ps
+  Clock uncertainty used by Vivado STA          ~150 ps (jitter + skew margin)
+  ─────────────────────────────────────────────────────────────
+  BUFR regional distribution skew              < 500 ps (within one region)
+  BUFIO I/O-only skew                           < 100 ps (optimized for SERDES)
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  RESOURCE COUNTS — QUICK REFERENCE
+═══════════════════════════════════════════════════════════════════════════════
+
+  Global clock buffers (BUFG):     32 total, max 12 active per region
+  Regional buffers (BUFR):         6 (one per clock region, integer ÷ 1-8)
+  I/O clock buffers (BUFIO):       6 (one per I/O bank, feeds ILOGIC/OLOGIC)
+  Multi-region buffers (BUFMR):    6 (drives BUFRs across adjacent regions)
+  MMCMs:                           5 (fractional ÷, dynamic phase, spread-spectrum)
+  PLLs:                            5 (lower jitter, integer ÷ only, 6 outputs)
+  HROWs (Horizontal Clock Rows):   3 (one per row of clock regions)
+  Clock regions:                   6 (2 columns × 3 rows)
+  VCO frequency range:             600 – 1600 MHz (hard constraint — violating
+                                   causes unlock or unreliable output)
