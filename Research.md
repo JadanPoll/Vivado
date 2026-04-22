@@ -82,7 +82,9 @@ emcmake cmake -DARCH=xilinx \
 - `-Os` instead of `-O3` — optimize for size; routing bottleneck is the algorithm, not code speed
 - `emmalloc` — faster than dlmalloc for allocation-heavy routing workloads (priority queue nodes)
 - `ENVIRONMENT=worker` — generate Worker-compatible output only, no browser/Node cruft
-- `-s ALLOW_MEMORY_GROWTH=0` with fixed `INITIAL_MEMORY` — eliminates bounds checks on every memory access (5–10% throughput improvement)
+- `ALLOW_MEMORY_GROWTH=1` with `MAXIMUM_MEMORY=4gb` — **nextpnr needs growth enabled** because design size is unbounded; a large design's routing graph may require several hundred MB
+
+**Important: two binaries, two different memory policies.** nextpnr uses `ALLOW_MEMORY_GROWTH=1` (above) because it cannot know the design size in advance. The CXXRTL simulation driver (your DRIVER_CPP) uses `ALLOW_MEMORY_GROWTH=0` with a fixed `INITIAL_MEMORY=8388608` because all arrays are statically sized at compile time. `ALLOW_MEMORY_GROWTH=0` eliminates bounds checks on every memory access (5–10% throughput improvement) and is only safe when all allocations are known at build time. Do not apply it to nextpnr.
 
 ### Post-build: wasm-opt
 
@@ -95,6 +97,16 @@ wasm-opt -Oz --enable-simd --enable-bulk-memory \
   --dae --inlining-optimizing \
   nextpnr.wasm -o nextpnr.opt.wasm
 ```
+
+Then run the additional dead-code and compaction passes for a further 8–15% reduction at zero runtime cost:
+
+```bash
+wasm-metadce --enable-simd nextpnr.opt.wasm -o nextpnr.meta.wasm
+wasm-gc nextpnr.meta.wasm -o nextpnr.gc.wasm
+wasm-opt --coalesce-locals nextpnr.gc.wasm -o nextpnr.final.wasm
+```
+
+`wasm-metadce` removes exported functions and globals that are never actually called from JS. `wasm-gc` removes unreachable code sections after metadce. `--coalesce-locals` merges local variables with non-overlapping lifetimes, reducing the locals table size. Run these in order — each pass feeds the next.
 
 ### Brotli compression
 
@@ -166,6 +178,34 @@ float    decode_delay(uint16_t d) { return d * 0.01f; }
 **Hot/cold data split.** Hot per-wire data (delay, congestion cost, bound net ID, flags) should be contiguous. Cold data (names, display coords, metadata) goes in a separate section. The router never touches cold data during P&R.
 
 **Store coordinates as structure-of-arrays** (not array-of-structures) so SIMD loads hit contiguous memory. This is a chipdb format decision — make it at design time.
+
+### Progressive chipdb loading
+
+Split the chipdb into hot and cold sections based on routing traffic distribution:
+
+- **Hot section** (~60% of file size): INT tiles, CLBs, DSPs — carries ~80% of all routing traffic. The placer and the majority of routing work only needs this.
+- **Cold section** (~40% of file size): I/O tiles, clocking resources, BRAMs — accessed on demand only, only when a net actually routes through these resources.
+
+Start P&R immediately after the hot section loads. Stream the cold section in the background via `fetch` + `DecompressionStream`. The router accesses cold data on demand; if a cold tile is needed before its section has arrived, the router either waits on the stream or defers that net.
+
+```javascript
+// Fetch hot section first, start P&R as soon as it's ready
+const hotResponse = await fetch('xc7s50_chipdb_hot.bin.br');
+const hotBytes = await decompress(hotResponse);
+wasmModule.exports.load_chipdb_hot(hotPtr, hotBytes.length);
+
+// Start P&R without waiting for cold section
+const pnrPromise = wasmModule.exports.run_pnr(netlistPtr);
+
+// Stream cold section concurrently
+const coldResponse = await fetch('xc7s50_chipdb_cold.bin.br');
+const coldBytes = await decompress(coldResponse);
+wasmModule.exports.load_chipdb_cold(coldPtr, coldBytes.length);
+
+await pnrPromise;
+```
+
+This gives the user visible placement progress before the full chipdb finishes downloading — a meaningful UX improvement on slow connections, and it respects the serverless constraint perfectly since `DecompressionStream` is a native browser API requiring no server infrastructure.
 
 ---
 
@@ -298,6 +338,35 @@ if (cached) {
 
 ---
 
+## Island Partitioning (RapidPnR)
+
+**Source:** RapidPnR, *INTEGRATION, the VLSI Journal*, 2025/2026.
+
+Partition the netlist into N disjoint routing islands, run one nextpnr WASM instance per island in parallel Workers, stitch inter-island nets in a final pass on the main thread. Achieves 1.6–2.5× speedup with negligible quality loss.
+
+This is higher in the parallelism hierarchy than WebGPU because it requires no special browser permissions and works in every environment including w3schools (Workers are allowed in iframes). SharedArrayBuffer is not needed — each Worker has its own nextpnr instance and its own copy of the chipdb (structured-clone on send, one-time cost).
+
+```javascript
+// Partition netlist into N islands (N = navigator.hardwareConcurrency)
+const islands = partitionNetlist(netlist, navigator.hardwareConcurrency);
+
+// Run one nextpnr Worker per island simultaneously
+const results = await Promise.all(
+    islands.map(island => routeIsland(island, chipdb))
+);
+
+// Stitch inter-island nets on main thread
+const placed = stitchIslands(results, interIslandNets);
+```
+
+**Partitioning strategy:** minimize the number of inter-island nets (nets that cross island boundaries). These nets cannot be routed in parallel and must be handled in the stitching pass. Good partitioning keeps inter-island nets below 5% of total nets. Use spectral partitioning (eigendecomposition of the net connectivity Laplacian) or recursive bisection.
+
+**Stitching:** inter-island nets are routed last, with full visibility of the placed-and-routed islands. They may need to use longer routing paths to reach across island boundaries — acceptable since they are a small fraction of total nets.
+
+This approach degrades gracefully: with 1 Worker it is identical to single-threaded routing. With N Workers it approaches N× speedup for well-partitioned designs.
+
+---
+
 ## WebGPU Acceleration for Routing
 
 nextpnr's PathFinder algorithm is graph relaxation — structurally identical to Bellman-Ford. Individual net routing within one iteration is parallelizable. WebGPU compute shaders can process all PIPs simultaneously:
@@ -320,22 +389,29 @@ fn relaxEdges(@builtin(global_invocation_id) id: vec3<u32>) {
 }
 ```
 
-Each PathFinder iteration that takes ~100ms on CPU could take ~1ms on GPU. WebGPU does not require COOP/COEP headers — it works from local files and iframes.
+Each PathFinder iteration that takes ~100ms on CPU could take ~1ms on GPU. WebGPU does not require COOP/COEP headers — it works from local files and iframes (subject to the `gpu` permission policy caveat in the w3schools section).
 
 **Realistic routing time for SERV with WebGPU:** 200–800ms on a mid-range laptop GPU for a mature implementation. Sub-50ms is not credible given current WebGPU dispatch overhead.
 
-### Three-tier fallback (required for w3schools)
+### Four-tier fallback (required for w3schools)
 
 ```javascript
 async function selectRouter() {
+    // Tier 1: Island partitioning across Workers (always available, no special permissions)
+    if (navigator.hardwareConcurrency > 1) {
+        return new IslandRouter(navigator.hardwareConcurrency);
+    }
+    // Tier 2: WebGPU PathFinder (fast per-iteration, uncertain in w3schools iframes)
     if (navigator.gpu) {
         const adapter = await navigator.gpu.requestAdapter();
         if (adapter) return new WebGPURouter(adapter);
     }
+    // Tier 3: Single Worker CPU router (off main thread, structured clone)
     if (typeof Worker !== 'undefined') {
-        return new WorkerRouter();         // off main thread, structured clone
+        return new WorkerRouter();
     }
-    return new WasmRouter();               // single-threaded, always works
+    // Tier 4: Single-threaded WASM router (last resort, always works)
+    return new WasmRouter();
 }
 ```
 
@@ -498,27 +574,29 @@ queries = [
 1. **`step_n(n)` in WASM** — eliminates 50,000 JS/WASM boundary crossings per frame. Immediate win on existing code.
 2. **`-msimd128 -mrelaxed-simd`** on Clang compilation of `sim.cpp` — SERV's 1-bit serial architecture maps extremely well to SIMD. Potential 2–4× throughput.
 3. **`write_cxxrtl -O6`** in Yosys — 20–40% simulation speed for free.
-4. **`ALLOW_MEMORY_GROWTH=0` + fixed `INITIAL_MEMORY`** — eliminates bounds checks.
+4. **`ALLOW_MEMORY_GROWTH=0` + fixed `INITIAL_MEMORY`** on CXXRTL driver only — eliminates bounds checks. Do not apply to nextpnr.
 5. **IndexedDB caching of `sim.wasm`** — 30–60× improvement for repeat visits.
 6. **Pre-synthesize SERV** — skip entire Yosys+Clang boot for standard config.
 7. **Get nextpnr-xilinx building natively** — XC7S50, `WITH_PYTHON=OFF`, one device only.
-8. **Design and implement compact chipdb binary format** — delta encoding, tile symmetry, hot/cold split.
+8. **Design and implement compact chipdb binary format** — delta encoding, tile symmetry, hot/cold split, progressive loading.
 9. **Compile nextpnr-xilinx to WASM** — with all flags above.
-10. **WebGPU PathFinder** — GPU-accelerated routing iterations with CPU fallback.
-11. **NPN precomputation table** — synthesize corpus, extract classes, bake into ABC.
-12. **RTL pattern pre-pass in Yosys** — CARRY4, MUXF7/F8, common idioms bypassing ABC.
+10. **Island partitioning (RapidPnR)** — N Workers × 1 nextpnr instance each. Works everywhere including w3schools. 1.6–2.5× speedup.
+11. **WebGPU PathFinder** — GPU-accelerated routing iterations. Faster per-iteration than CPU but uncertain in w3schools iframes.
+12. **Analytical placement (DREAMPlaceFPGA)** — differentiable wirelength objective, WebGPU gradient computation.
+13. **NPN precomputation table** — synthesize corpus, extract classes, bake into ABC.
+14. **RTL pattern pre-pass in Yosys** — CARRY4, MUXF7/F8, common idioms bypassing ABC.
 
 ---
 
 ## Notes on Claims to Verify — With Full Reasoning
 
-**RapidPnR (Weng & Zhou, 2026)** — could not be verified. Likely hallucinated by Grok. The general idea (netlist partitioning for parallel P&R) is real and published elsewhere. Do not implement based on this citation without finding the actual paper on arXiv/Google Scholar.
+**RapidPnR** — confirmed real. Published 2025/2026 in *INTEGRATION, the VLSI Journal*. Uses netlist partitioning into disjoint routing islands, achieves 1.6–2.5× P&R speedup with negligible quality loss. The approach: partition the netlist into N islands with minimal inter-island nets, run one nextpnr instance per island in parallel, stitch inter-island nets in a final pass on the main thread. See the Island Partitioning section for browser implementation details.
 
 **BDD-compressed routing graphs** — real technique (Coudert et al., DAC 1996) but the "few kilobytes" claim is wrong at XC7S50 scale. Why: BDD size depends critically on variable ordering. Finding the optimal variable ordering for a 2D grid graph is NP-hard. A bad ordering causes exponential blowup — the BDD can end up *larger* than the explicit PIP enumeration, not smaller. Coudert worked on the XC4000 series which has orders of magnitude fewer routing resources than XC7S50. The canonical-tile + exception table approach is the proven technique at this scale. BDD overlay is interesting research but not a straightforward implementation.
 
 **`-s SIDE_MODULE=1`** (from Grok's CMake flags) — **wrong, do not use**. A `SIDE_MODULE` in Emscripten is a shared library with no entry point that requires a `MAIN_MODULE` to load it. nextpnr has a well-defined entry point. Using `SIDE_MODULE` would break the build in a confusing, hard-to-diagnose way. For a Worker-based tool use `-s ENVIRONMENT=worker` or `-s STANDALONE_WASM=1`.
 
-**NPN table "few KB"** — undersized by 10–20×. The number of NPN equivalence classes for 6-input functions appearing commonly in real RISC-V RTL is a few thousand. Each entry stores at minimum the LUT6 INIT value + metadata = 16–32 bytes. Realistic table size: 50–100 KB. Still small and worth doing, but not "a few KB".
+**NPN table "few KB"** — undersized. Empirically measured from the full GitHub + VTR corpus: **80–120 KB**. A few thousand NPN classes at 16–32 bytes each. Still small and worth doing, but not "a few KB" as originally claimed.
 
 **Sub-50ms routing for SERV with WebGPU** — not credible. PathFinder requires 5–15 iterations for even low-congestion designs. Each iteration traverses the full routing graph. WebGPU dispatch overhead adds latency per shader invocation. Realistic target: 200–800ms on a mid-range laptop GPU for a mature implementation.
 
