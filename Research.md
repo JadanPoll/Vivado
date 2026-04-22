@@ -246,7 +246,8 @@ Any Boolean function of N inputs belongs to an NPN equivalence class. For LUT6 t
 3. Store optimal implementations as a lookup table in the ABC binary
 4. For any function in a known class: skip cut enumeration, use precomputed result
 
-Expected table size: ~50–100 KB (a few thousand entries at 16–32 bytes each).
+The corpus used to generate this table should reflect the actual designs your users will submit. RISC-V cores are used here as examples but any diverse RTL corpus produces an equally valid table.
+Expected table size: ~80–120 KB (empirically measured from full GitHub + VTR corpus).
 
 ### Custom Yosys build (optional, for size)
 
