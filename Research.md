@@ -524,6 +524,7 @@ github.com/chipsalliance/rocket-chip
 github.com/ucb-bar/chipyard
 github.com/pulp-platform/cv32e40p
 ```
+Note: The corpus used to generate this table should reflect the actual designs your users will submit. RISC-V cores are used here as examples but any diverse RTL corpus produces an equally valid table.
 
 Synthesize all of these through Yosys, log every 6-input function's NPN class, collect the histogram. The top 1000 classes by frequency cover 95%+ of all logic in real RISC-V designs.
 
