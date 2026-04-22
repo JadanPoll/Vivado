@@ -235,7 +235,7 @@ Before ABC runs, recognize common RTL patterns and substitute known-optimal XC7S
 - 7-input function → 2× LUT6 + MUXF7
 - 8-input function → 4× LUT6 + 2× MUXF7 + MUXF8
 
-This is what Vivado's proprietary synthesizer does. Match on the Boolean function being computed, not signal names. Skip ABC entirely for recognized patterns.
+These patterns are not RISC-V specific — a full adder, carry chain, and mux tree appear in any arithmetic or control-heavy RTL. The pre-pass matches on the Boolean function being computed, not the design domain. This is what Vivado's proprietary synthesizer does. Match on the Boolean function being computed, not signal names. Skip ABC entirely for recognized patterns.
 
 ### NPN equivalence class precomputation
 
