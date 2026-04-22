@@ -606,7 +606,7 @@
                VI.rect("pr_exp_bg", 770, CR_EXP_Y + 20, 766, 88, "#050e05", "#335533", 1, 3);
                VI.label("pr_ec1", "POPCOUNT: CARRY4 used to count set bits. P=partial_sum, G=carry_generate from LUT XOR/AND.", 775, CR_EXP_Y + 24, "#81c784", 8, "sans-serif");
                VI.label("pr_ec2", "  Compressor tree maps N bits to log2(N) CARRY4 stages. 64-bit popcount = 6 stages.", 775, CR_EXP_Y + 35, "#4fc3f7", 8, "sans-serif");
-               VI.label("pr_ec3", "CYINIT: seeds the first carry. CYINIT=0 for adders. CYINIT=1 for subtractors (two's complement).", 775, CR_EXP_Y + 46, "#ffd54f", 8, "sans-serif");
+               VI.label("pr_ec3", "CYINIT: seeds the first carry. CYINIT=0 for adders. CYINIT=1 for subtractors (twos complement).", 775, CR_EXP_Y + 46, "#ffd54f", 8, "sans-serif");
                VI.label("pr_ec4", "  Mux selects between CIN pin (cascade) and CYINIT (seeding). Only the first primitive uses CYINIT.", 775, CR_EXP_Y + 57, "#ffd54f", 8, "sans-serif");
                VI.label("pr_ec5", "PBLOCK: if CARRY4 chain spans > half the device height, Vivado may route poorly.", 775, CR_EXP_Y + 68, "#ff9800", 8, "sans-serif");
                VI.label("pr_ec6", "  Use PBLOCK constraints to pin arithmetic logic near the bottom of the die.", 775, CR_EXP_Y + 79, "#ff9800", 8, "sans-serif");
