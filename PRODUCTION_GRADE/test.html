@@ -3,210 +3,313 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ZeroLabs: Spartan-7 Web-IDE</title>
+    <title>ZeroLabs: WebUSB FPGA Flash Interface</title>
     <style>
         *, *::before, *::after { box-sizing: border-box; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0d0f1a; color: #e0e0e0; padding: 20px; margin: 0; }
-        h2 { color: #4af626; margin-top: 0; font-size: 1.5rem; text-transform: uppercase; border-bottom: 2px solid #2a3050; padding-bottom: 10px; }
-        p { color: #b0b8c8; font-size: 0.9rem; }
-        .controls { display: flex; gap: 10px; margin: 20px 0; }
-        button { padding: 12px 24px; font-size: 0.9rem; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; transition: 0.2s; }
-        button:disabled { opacity: 0.3; cursor: not-allowed; }
-        .btn-compile { background: #c62828; color: white; }
-        .btn-flash { background: #2e7d32; color: white; }
+        body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 20px; margin: 0; }
+        h2 { color: #4af626; margin-top: 0; font-size: 1.6rem; text-transform: uppercase; letter-spacing: 1px; }
+        h3 { color: #9cdcfe; margin: 0 0 10px; font-size: 1.05rem; }
+        p { margin: 0 0 15px; line-height: 1.5; color: #b0b8c8; font-size: 0.95rem; }
+        button { padding: 11px 22px; font-size: 1rem; background: #1565c0; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; margin-right: 10px; margin-bottom: 8px; transition: background 0.15s; }
+        button:hover:not(:disabled) { background: #1e88e5; }
+        button:disabled { opacity: 0.45; cursor: not-allowed; }
+        button.green { background: #2e7d32; }
+        button.green:hover:not(:disabled) { background: #388e3c; }
+        button.red { background: #c62828; }
+        button.red:hover:not(:disabled) { background: #e53935; }
         .panel { background: #1e2030; border: 1px solid #2a3050; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
-        #console-log { height: 300px; overflow-y: auto; color: #9cdcfe; background: #000; padding: 15px; border-radius: 6px; font-family: 'Consolas', monospace; font-size: 0.85rem; line-height: 1.5; }
-        .log-ok { color: #69db7c; font-weight: bold; }
+        #console-log { height: 350px; overflow-y: auto; color: #9cdcfe; white-space: pre-wrap; font-family: monospace; font-size: 0.85rem; border: 1px solid #2a3050; background: #0d0f1a; padding: 10px; border-radius: 6px; line-height: 1.5; }
         .log-err { color: #f97171; }
-        .status-box { display: flex; gap: 20px; }
-        .status-item { flex: 1; padding: 10px; background: #0d0f1a; border-radius: 4px; border: 1px solid #333; font-family: monospace; font-size: 0.8rem; }
+        .log-ok { color: #69db7c; font-weight: bold; }
+        .log-warn { color: #ffd43b; }
+        .grid-container { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+        @media (max-width: 900px) { .grid-container { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
-    <h2>⚡ ZeroLabs: Urbana Web-Flash Interface</h2>
-    <p>Synthesizing JTAG primitives and streaming Xilinx configuration frames via WebUSB.</p>
+    <h2>⚡ ZeroLabs: WebUSB Spartan-7 Flasher</h2>
+    <p>Compiling FASM to Bitstream via Bare-Metal Wasm and flashing directly over FTDI Interface 0.</p>
     
-    <div class="controls">
-        <button id="btn-compile" class="btn-compile">⚙ Step 1: Compile (Wasm)</button>
-        <button id="btn-flash" class="btn-flash" disabled>⚡ Step 2: Flash FPGA</button>
+    <div style="margin-bottom: 16px;">
+        <button id="btn-compile" class="red">⚙ Compile Bitstream (Wasm)</button>
+        <button id="btn-flash" class="green" disabled>⚡ Flash FPGA (WebUSB)</button>
     </div>
+    
+    <div class="grid-container">
+        <div class="panel" style="margin-bottom: 0;">
+            <h3>Compiler Pipeline</h3>
+            <p style="font-size: 0.8rem;">Fetches constraints and engine from the jsDelivr CDN.</p>
+            <div id="compiler-status" style="color: #ce9178; font-family: monospace; padding: 10px; background: #0d0f1a; border-radius: 6px; height: 60px; display: flex; align-items: center;">
+                Awaiting Compilation...
+            </div>
+        </div>
 
-    <div class="status-box panel">
-        <div class="status-item">Compiler: <span id="compiler-status">IDLE</span></div>
-        <div class="status-item">Hardware: <span id="jtag-status">DISCONNECTED</span></div>
+        <div class="panel" style="margin-bottom: 0;">
+            <h3>JTAG / FTDI Status</h3>
+            <p style="font-size: 0.8rem;">Direct metal interaction with the FT2232H chip.</p>
+            <div id="jtag-status" style="color: #ce9178; font-family: monospace; padding: 10px; background: #0d0f1a; border-radius: 6px; height: 60px; display: flex; align-items: center;">
+                Disconnected
+            </div>
+        </div>
     </div>
     
     <div class="panel">
-        <h3 style="margin-top:0; font-size:1rem; color:#9cdcfe">System Telemetry</h3>
-        <div id="console-log">Ready for ignition...</div>
+        <h3>Terminal / JTAG Telemetry</h3>
+        <div id="console-log">System Initialized. Awaiting user input.</div>
     </div>
 
 <script type="text/javascript">
     const logEl = document.getElementById('console-log');
-    const CDN_BASE = 'https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@main/PRODUCTION_GRADE';
     let compiledBitstream = null;
+
+    const CDN_BASE = 'https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@main/PRODUCTION_GRADE';
 
     function log(msg, cls = '') {
         const line = document.createElement('div');
         if (cls) line.className = cls;
-        line.textContent = "> " + msg;
+        line.textContent = `> ${msg}`;
         logEl.appendChild(line);
         logEl.scrollTop = logEl.scrollHeight;
     }
 
-    // --- Bit-Reversal Table for Spartan-7 Configuration ---
+    const workerCode = `
+        let successHandled = false;
+        self.onmessage = function(event) {
+            const msg = event.data;
+            const CDN_BASE = '${CDN_BASE}';
+            
+            self.Module = {
+                noInitialRun: false,
+                arguments: ['--part_file', '/part.yaml', '--frm_file', '/design.frames', '--output_file', '/design.bit'],
+                locateFile: function(path) {
+                    if (path.endsWith('.wasm')) return CDN_BASE + '/' + path;
+                    return path;
+                },
+                preRun: function() {
+                    self.FS.writeFile('/part.yaml', new TextEncoder().encode(msg.partYaml));
+                    self.FS.writeFile('/design.frames', new TextEncoder().encode(msg.framesStr));
+                },
+                print: function(text) { self.postMessage({ type: 'log', text: text }); },
+                printErr: function(text) { self.postMessage({ type: 'log', text: text }); },
+                postRun: function() { handleSuccess(); }
+            };
+
+            function handleSuccess() {
+                if (successHandled) return;
+                successHandled = true;
+                const rawBitstream = self.FS.readFile('/design.bit');
+                const bitstream = new Uint8Array(rawBitstream).slice();
+                self.postMessage({ type: 'success', bitstream: bitstream }, [bitstream.buffer]);
+            }
+
+            importScripts(CDN_BASE + '/xc7frames2bit.js');
+        };
+    `;
+
+    const workerBlob = new Blob([workerCode], { type: 'application/javascript' });
+    const workerUrl = URL.createObjectURL(workerBlob);
+
     const REV_LUT = new Uint8Array(256);
-    for (var i = 0; i < 256; i++) {
+    for (let i = 0; i < 256; i++) {
         REV_LUT[i] = ((i & 1) << 7) | ((i & 2) << 5) | ((i & 4) << 3) | ((i & 8) << 1) |
                      ((i & 16) >> 1) | ((i & 32) >> 3) | ((i & 64) >> 5) | ((i & 128) >> 7);
     }
 
-    // ==========================================
-    // 1. ROBUST COMPILER ENGINE (Self-Stringifying)
-    // ==========================================
-    function compilerWorker() {
-        self.onmessage = async function(e) {
-            const data = e.data;
-            self.Module = {
-                noInitialRun: false,
-                arguments: ['--part_file', '/part.yaml', '--frm_file', '/design.frames', '--output_file', '/design.bit'],
-                locateFile: function(path) { 
-                    return path.endsWith('.wasm') ? data.cdn + '/' + path : path; 
-                },
-                preRun: function() {
-                    self.FS.writeFile('/part.yaml', data.partYaml);
-                    self.FS.writeFile('/design.frames', data.framesStr);
-                },
-                print: function(t) { self.postMessage({ type: 'log', text: t }); },
-                printErr: function(t) { self.postMessage({ type: 'log', text: t }); },
-                postRun: function() {
-                    const out = self.FS.readFile('/design.bit');
-                    const bitstream = new Uint8Array(out).slice();
-                    self.postMessage({ type: 'success', bitstream: bitstream }, [bitstream.buffer]);
-                }
-            };
-            importScripts(data.cdn + '/xc7frames2bit.js');
-        };
-    }
-
-    const workerBlob = new Blob(['(' + compilerWorker.toString() + ')()'], { type: 'application/javascript' });
-    const workerUrl = URL.createObjectURL(workerBlob);
-
-    // ==========================================
-    // 2. JTAG DRIVER (XC7S50 Compatible)
-    // ==========================================
     class WebUSBJtag {
         constructor(device) {
             this.device = device;
-            this.epIn = 1;
-            this.epOut = 2;
+            this.epIn = null; this.epOut = null;
         }
+        
+        async _transferOut(data) { await this.device.transferOut(this.epOut, data); }
 
         async init() {
             await this.device.open();
             if (this.device.configuration === null) await this.device.selectConfiguration(1);
             await this.device.claimInterface(0);
-            // MPSSE / Vendor Commands
-            await this.device.controlTransferOut({ requestType: 'vendor', recipient: 'device', request: 0x00, value: 0, index: 1 });
-            await this.device.controlTransferOut({ requestType: 'vendor', recipient: 'device', request: 0x0B, value: 0x0200, index: 1 });
-            // Set Clock (30MHz)
-            await this.device.transferOut(this.epOut, new Uint8Array([0x8A, 0x85, 0x8D, 0x86, 0x00, 0x00, 0x87]));
-        }
-
-        async shiftTMS(tms, count, tdi) {
-            var bit = tdi ? 0x80 : 0;
-            await this.device.transferOut(this.epOut, new Uint8Array([0x4A, count - 1, bit | (tms & 0x7F)]));
-        }
-
-        async shiftIR(ir, len) {
-            var length = len || 6;
-            await this.shiftTMS(0x03, 4); // To Shift-IR
-            await this.device.transferOut(this.epOut, new Uint8Array([0x1B, length - 2, ir]));
-            await this.shiftTMS(0x03, 3, (ir >> (length - 1)) & 1); // To Update-IR
-        }
-
-        async shiftDRBulk(data) {
-            const bytes = data.length - 1;
-            const max = 65535;
-            const chunks = Math.ceil(bytes / max);
-            let ptr = 0;
-            // Transfer logic with bit-reversal consideration
-            for (var i = 0; i < chunks; i++) {
-                let sz = Math.min(max, bytes - ptr);
-                let header = new Uint8Array([0x19, sz & 0xFF, (sz >> 8) & 0xFF]);
-                await this.device.transferOut(this.epOut, header);
-                await this.device.transferOut(this.epOut, data.subarray(ptr, ptr + sz));
-                ptr += sz;
+            const alt = this.device.configuration.interfaces[0].alternates[0];
+            for (const ep of alt.endpoints) {
+                if (ep.direction === 'in') this.epIn = ep.endpointNumber;
+                if (ep.direction === 'out') this.epOut = ep.endpointNumber;
             }
-            const last = data[data.length - 1];
-            await this.device.transferOut(this.epOut, new Uint8Array([0x1B, 6, last, 0x4A, 2, ((last >> 7) & 1 ? 0x80 : 0) | 0x03, 0x87]));
+            await this.device.controlTransferOut({ requestType: 'vendor', recipient: 'device', request: 0x00, value: 0x0000, index: 1 });
+            await this.device.controlTransferOut({ requestType: 'vendor', recipient: 'device', request: 0x09, value: 0x0002, index: 1 });
+            await this.device.controlTransferOut({ requestType: 'vendor', recipient: 'device', request: 0x0B, value: 0x0200, index: 1 });
+            await this._transferOut(new Uint8Array([0x8A, 0x85, 0x8D, 0x97, 0x86, 0x00, 0x00, 0x80, 0x08, 0x0B, 0x87]));
+        }
+
+        async shiftTMS(tms, count, tdi = 0) { 
+            // Corrected to 0x4B (TMS write only, no read) to prevent RX buffer hangs
+            await this._transferOut(new Uint8Array([0x4B, count-1, (tdi ? 0x80 : 0x00)|(tms & 0x7F)])); 
+        }
+
+        async shiftIR(instruction, len = 6) {
+            await this.shiftTMS(0x03, 4);
+            await this._transferOut(new Uint8Array([0x1B, len-2, instruction & 0xFF]));
+            await this.shiftTMS(0x03, 3, (instruction>>(len-1)) & 1);
+        }
+
+        async shiftDRBulk(tdi) {
+            const bytes = tdi.length - 1;
+            const maxChunk = 65535;
+            const numChunks = Math.ceil(bytes / maxChunk);
+            const cmd = new Uint8Array(3 + (numChunks * 3) + bytes + 7);
+            let ptr = 0;
+            
+            cmd.set([0x4B, 2, 0x01], ptr); ptr += 3; // Shift to Shift-DR
+            
+            let offset = 0;
+            while (offset < bytes) {
+                const chunkBytes = Math.min(maxChunk, bytes - offset);
+                const len = chunkBytes - 1;
+                cmd.set([0x19, len & 0xFF, (len >> 8) & 0xFF], ptr); ptr += 3;
+                cmd.set(tdi.subarray(offset, offset + chunkBytes), ptr); ptr += chunkBytes;
+                offset += chunkBytes;
+            }
+            
+            const last = tdi[tdi.length - 1];
+            cmd.set([0x1B, 6, last, 0x4B, 2, ((last >> 7) & 1 ? 0x80 : 0x00) | 0x03, 0x87], ptr);
+            await this._transferOut(cmd);
+        }
+
+        async readData(len) {
+            const res = new Uint8Array(len);
+            let off = 0;
+            while (off < len) {
+                const r = await this.device.transferIn(this.epIn, 512);
+                const d = new Uint8Array(r.data.buffer);
+                for (let i = 0; i < d.length; i += 512) {
+                    const chunk = Math.min(d.length - i, 512);
+                    if (chunk > 2) {
+                        const p = Math.min(chunk - 2, len - off);
+                        res.set(d.subarray(i + 2, i + 2 + p), off);
+                        off += p;
+                    }
+                }
+            }
+            return res;
+        }
+
+        async flush() {
+            await this.device.transferOut(this.epOut, new Uint8Array([0x87]));
+            try { while (true) { const r = await this.device.transferIn(this.epIn, 512); if (r.data.byteLength <= 2) break; } } catch (e) {}
+        }
+
+        async readIDCODE() {
+            await this.shiftTMS(0x1F, 5); await this.shiftTMS(0x00, 1);
+            await this.shiftIR(0x09, 6); await this.shiftTMS(0x01, 3);
+            await this.flush();
+            await this._transferOut(new Uint8Array([0x39, 3, 0, 0, 0, 0, 0, 0x87]));
+            const res = await this.readData(4);
+            await this.shiftTMS(0x03, 3, 0);
+            return (res[3]<<24 | res[2]<<16 | res[1]<<8 | res[0]) >>> 0;
         }
 
         async readStatus() {
-            await this.shiftIR(0x05, 6); // CFG_IN
-            const pkt = new Uint8Array([0xAA, 0x99, 0x55, 0x66, 0x20, 0x00, 0x00, 0x00, 0x28, 0x00, 0xE0, 0x01, 0x20, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00]);
-            const revPkt = new Uint8Array(pkt.length);
-            for (var i = 0; i < pkt.length; i++) revPkt[i] = REV_LUT[pkt[i]];
-            await this.shiftDRBulk(revPkt);
-            await this.shiftIR(0x04, 6); // CFG_OUT
+            await this.shiftIR(0x05, 6);
+            const pkts = new Uint32Array([0xAA995566, 0x20000000, 0x2800E001, 0x20000000, 0x20000000]);
+            const cmdBytes = new Uint8Array(pkts.length * 4);
+            for(let i=0; i<pkts.length; i++) {
+                cmdBytes[i*4+0]=(pkts[i]>>24)&0xFF; cmdBytes[i*4+1]=(pkts[i]>>16)&0xFF;
+                cmdBytes[i*4+2]=(pkts[i]>>8)&0xFF;  cmdBytes[i*4+3]=pkts[i]&0xFF;
+            }
+            const rev = new Uint8Array(cmdBytes.length);
+            for(let i=0; i<cmdBytes.length; i++) rev[i] = REV_LUT[cmdBytes[i]];
+            await this.shiftDRBulk(rev);
+            await this.shiftIR(0x04, 6);
             await this.shiftTMS(0x01, 3);
-            await this.device.transferOut(this.epOut, new Uint8Array([0x39, 3, 0, 0, 0, 0, 0, 0x87]));
-            const r = await this.device.transferIn(this.epIn, 512);
-            const d = new Uint8Array(r.data.buffer).slice(2, 6);
-            return (REV_LUT[d[0]] << 24 | REV_LUT[d[1]] << 16 | REV_LUT[d[2]] << 8 | REV_LUT[d[3]]) >>> 0;
+            await this.flush();
+            await this._transferOut(new Uint8Array([0x39, 3, 0, 0, 0, 0, 0, 0x87]));
+            const res = await this.readData(4);
+            await this.shiftTMS(0x03, 3, 0);
+            return (REV_LUT[res[0]] << 24 | REV_LUT[res[1]] << 16 | REV_LUT[res[2]] << 8 | REV_LUT[res[3]]) >>> 0;
         }
 
-        async program(bitstream) {
-            log("Clearing SRAM via JPROGRAM...");
-            await this.shiftIR(0x0B, 6); await this.shiftIR(0x3F, 6); 
-            await new Promise(function(r) { setTimeout(r, 100); }); // Clearing time
-            log("Injecting bitstream frames...");
-            await this.shiftIR(0x05, 6);
-            const revBit = new Uint8Array(bitstream.length);
-            for (var i = 0; i < bitstream.length; i++) revBit[i] = REV_LUT[bitstream[i]];
-            await this.shiftDRBulk(revBit);
+        async programXC7(bitstream) {
+            log("[USB] Starting Airtight UG470 Config...");
+            const rev = new Uint8Array(bitstream.length);
+            for (let i = 0; i < bitstream.length; i++) rev[i] = REV_LUT[bitstream[i]];
+            
+            await this.shiftTMS(0x1F, 5); await this.shiftTMS(0x00, 1);
+            await this.shiftIR(0x0B, 6); // JPROGRAM
+            await this.shiftIR(0x3F, 6); // BYPASS
+            
+            log("[USB] Waiting 100ms for FPGA housekeeping (INIT_B)...");
+            await new Promise(r => setTimeout(r, 100));
+
+            log("[USB] Sending payload...");
+            await this.shiftIR(0x05, 6); // CFG_IN
+            const t0 = performance.now();
+            await this.shiftDRBulk(rev);
+            log(`[USB] Streamed in ${(performance.now()-t0).toFixed(1)}ms`);
+            
             await this.shiftIR(0x0C, 6); // JSTART
-            log("Finalizing startup sequencer...");
-            await this.device.transferOut(this.epOut, new Uint8Array([0x19, 0xFF, 0x00, ...new Uint8Array(256)]));
-            const stat = await this.readStatus();
-            log("STAT Register: 0x" + stat.toString(16).toUpperCase());
-            if ((stat >> 14) & 1) log("SUCCESS: FPGA DONE BIT HIGH", "log-ok");
-            else log("FAILURE: FPGA DONE BIT LOW", "log-err");
+
+            log("[USB] Generating 2048 startup clocks in Run-Test/Idle...");
+            // Fixed startup clocking using a loop of 0x4B pulses (TMS=0) for stability
+            const numCommands = 300; // 300 * 7 = 2100 clocks
+            const clkCmd = new Uint8Array(numCommands * 3);
+            for (let i = 0; i < numCommands; i++) {
+                clkCmd[i * 3] = 0x4B;     // TMS Write Command
+                clkCmd[i * 3 + 1] = 0x06; // 7 bits
+                clkCmd[i * 3 + 2] = 0x00; // TMS=0 (Stay in RTI)
+            }
+            await this._transferOut(clkCmd);
+
+            const finalStat = await this.readStatus();
+            log(`[USB] Final STAT: 0x${finalStat.toString(16).padStart(8, '0').toUpperCase()}`);
+            if ((finalStat >> 14) & 1) {
+                log("%c[USB] FLASH SUCCESS! DONE LED SHOULD BE ON.", "log-ok");
+            } else {
+                log("[USB] FLASH FAILED: DONE BIT LOW.", "log-err");
+            }
         }
     }
 
-    // ==========================================
-    // 3. EVENT HANDLERS
-    // ==========================================
-    document.getElementById('btn-compile').onclick = async function() {
+    document.getElementById('btn-compile').addEventListener('click', async () => {
+        log("Fetching part.yaml and serv.frames from jsDelivr...");
         document.getElementById('btn-compile').disabled = true;
-        log("Fetching part.yaml and serv.frames...");
         try {
-            const pRes = await fetch(CDN_BASE + '/part.yaml');
-            const fRes = await fetch(CDN_BASE + '/serv.frames');
+            const [partRes, framesRes] = await Promise.all([
+                fetch(`${CDN_BASE}/part.yaml`),
+                fetch(`${CDN_BASE}/serv.frames`)
+            ]);
+            if (!partRes.ok || !framesRes.ok) throw new Error("Network response was not ok during fetch.");
+            const partYaml = await partRes.text();
+            const framesStr = await framesRes.text();
+            log("Files fetched. Starting Wasm Compilation Thread...");
             const worker = new Worker(workerUrl);
-            worker.onmessage = function(e) {
-                if (e.data.type === 'log') log("[WASM] " + e.data.text);
+            worker.onmessage = (e) => {
+                if (e.data.type === 'log') log(`[WASM] ${e.data.text}`);
+                if (e.data.type === 'error') log(`[WASM ERROR] ${e.data.message}`, 'log-err');
                 if (e.data.type === 'success') {
                     compiledBitstream = e.data.bitstream;
-                    document.getElementById('compiler-status').textContent = 'COMPILED';
+                    document.getElementById('compiler-status').innerHTML = `<span style="color:#69db7c;font-weight:bold;">✅ Compiled: ${compiledBitstream.length} bytes</span>`;
                     document.getElementById('btn-flash').disabled = false;
-                    log("Wasm compilation successful.", "log-ok");
+                    log("Bitstream compiled and loaded into JS Memory.", 'log-ok');
                 }
             };
-            worker.postMessage({ partYaml: await pRes.text(), framesStr: await fRes.text(), cdn: CDN_BASE });
-        } catch (err) { log("Error: " + err.message, "log-err"); }
-    };
+            worker.postMessage({ type: 'run', partYaml, framesStr });
+        } catch (err) {
+            log(`[FETCH ERROR] ${err.message}`, 'log-err');
+            document.getElementById('btn-compile').disabled = false;
+        }
+    });
 
-    document.getElementById('btn-flash').onclick = async function() {
+    document.getElementById('btn-flash').addEventListener('click', async () => {
         try {
-            const dev = await navigator.usb.requestDevice({ filters: [{ vendorId: 0x0403, productId: 0x6010 }] });
-            document.getElementById('jtag-status').textContent = dev.productName.toUpperCase();
-            const jtag = new WebUSBJtag(dev);
+            const device = await navigator.usb.requestDevice({ filters: [{vendorId: 0x0403, productId: 0x6010}] });
+            document.getElementById('jtag-status').innerHTML = `<span style="color:#69db7c;font-weight:bold;">🔗 ${device.productName}</span>`;
+            const jtag = new WebUSBJtag(device);
             await jtag.init();
-            await jtag.program(compiledBitstream);
-        } catch (err) { log("JTAG Error: " + err.message, "log-err"); }
-    };
+            const idcode = await jtag.readIDCODE();
+            log(`[USB] IDCODE: 0x${idcode.toString(16).padStart(8, '0').toUpperCase()}`);
+            if (idcode !== 0x0362F093) throw new Error("IDCODE Mismatch! Expected 0x0362F093.");
+            await jtag.programXC7(compiledBitstream);
+        } catch (err) {
+            log(`[FLASH ERROR] ${err.message}`, 'log-err');
+        }
+    });
 </script>
 </body>
 </html>
