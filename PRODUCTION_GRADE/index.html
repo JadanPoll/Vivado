@@ -179,23 +179,25 @@
 
                 log("[USB] Requesting FTDI device...");
                 const device = await navigator.usb.requestDevice({
-                    filters: [{ vendorId: 0x0403, productId: 0x6010 }] // FT2232H
+                    filters: [{vendorId: 0x0403, productId: 0x6010}]
                 });
-                
                 const jtag = new WebUSBJtag(device);
-                await jtag.init(30000000); 
+                await jtag.init(30000000);
                 
-                // Optional: You can uncomment this later to verify your board connection!
                 const idcode = await jtag.readIDCODE();
-                log(`[USB] IDCODE: 0x${idcode.toString(16).toUpperCase()}`);
+                const expectedId = 0x0362F093;
                 
-                log("[USB] Flashing bitstream...");
+                log(`[USB] IDCODE: 0x${idcode.toString(16).padStart(8, '0').toUpperCase()}`);
+                
+                // THE GATE: Hard abort on desync
+                if (idcode !== expectedId) {
+                    throw new Error(`IDCODE Mismatch! Expected 0x0362F093. The JTAG chain is desynchronized.`);
+                }
+                
+                log("[USB] IDCODE verified. Flashing bitstream...");
                 await jtag.programXC7(pipelineState.bitstream);
-                log("[USB] Flash complete! Check the DONE LED.");
-
-            } catch (err) {
-                log(`[FLASH ERROR] ${err}`, true);
-            }
+                log("[USB] Done! Check DONE LED.");
+            } catch(err) { log(`[FLASH ERROR] ${err}`, true); }
         });
     </script>
 </body>
