@@ -1,19 +1,29 @@
 module zero_soc (
     input clk,
-    input rst_n,           // We will use this to toggle all segments
-    input [15:0] sw,       // Slide switches
-    output [15:0] led,     // On-board LEDs
-    output [7:0] hex_seg,  // Hex Segments
-    output [3:0] hex_grid  // Digit Select
+    output [15:0] led
 );
-    // Wire the first 16 switches directly to the 16 LEDs
-    assign led = sw;
+    // 1. Physical Heartbeat (Blinky)
+    reg [26:0] counter;
+    always @(posedge clk) counter <= counter + 1;
+    assign led[0] = counter[26]; // Toggles roughly every 0.6 seconds
+    assign led[15:1] = 14'h0;
 
-    // Use the Reset button to test segments
-    // On Urbana, segments are Active LOW. 
-    // If rst_n (BTN0) is pressed, all segments turn ON.
-    assign hex_seg = rst_n ? 8'hFF : 8'h00; 
+    // 2. The JTAG Loopback Probe
+    // Connects internal logic to JTAG USER1 register (Chain 1)
+    wire drck, sel, shift, tdi, tdo;
+    BSCANE2 #(.JTAG_CHAIN(1)) bscan_inst (
+        .DRCK(drck),   // Gated TCK for Chain 1
+        .SEL(sel),     // High when USER1 is active
+        .SHIFT(shift), // High during Shift-DR state
+        .TDI(tdi),     // Serial input from external JTAG
+        .TDO(tdo),     // Serial output to external JTAG
+        .CAPTURE(), .RESET(), .UPDATE(), .TMS()
+    );
 
-    // Enable all 4 digits of the first hex display (Active LOW)
-    assign hex_grid = 4'b0000; 
+    // Shift register to hold and move the magic number
+    reg [31:0] test_reg = 32'hDEADBEEF;
+    always @(posedge drck) begin
+        if (sel && shift) test_reg <= {tdi, test_reg[31:1]};
+    end
+    assign tdo = test_reg[0];
 endmodule
