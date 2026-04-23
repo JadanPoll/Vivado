@@ -287,7 +287,8 @@ emcmake cmake \
   -DBoost_NO_BOOST_CMAKE=ON \
   -DEigen3_DIR=/home/codespace/emsdk/upstream/emscripten/cache/sysroot/lib/cmake/Eigen3 \
   -DCMAKE_CXX_FLAGS="-Os -msimd128 -DNPNR_DISABLE_THREADS" \
-  -DCMAKE_EXE_LINKER_FLAGS="-Os -s ALLOW_MEMORY_GROWTH=1 -s MAXIMUM_MEMORY=4gb -s INITIAL_MEMORY=268435456 -s MALLOC=emmalloc -s ASSERTIONS=0 -s ENVIRONMENT=worker -s EXPORTED_FUNCTIONS=[_main] -s EXIT_RUNTIME=0 -Wl,--allow-multiple-definition" \
+
+-DCMAKE_EXE_LINKER_FLAGS="-Os -msimd128 -mbulk-memory -mnontrapping-fptoint -s ALLOW_MEMORY_GROWTH=1 -s MAXIMUM_MEMORY=4gb -s INITIAL_MEMORY=268435456 -s MALLOC=emmalloc -s ASSERTIONS=0 -s ENVIRONMENT=worker -s EXPORTED_FUNCTIONS=[_main] -s EXIT_RUNTIME=0 -Wl,--allow-multiple-definition" \
   -DCMAKE_BUILD_TYPE=Release
 
 make -j$(nproc)
@@ -299,7 +300,7 @@ make -j$(nproc)
 
 ```bash
 /home/codespace/emsdk/upstream/bin/wasm-opt \
-  -Oz --no-validation \
+  -Oz \
   --enable-simd --enable-bulk-memory \
   --enable-nontrapping-float-to-int \
   --enable-sign-ext --enable-mutable-globals \
