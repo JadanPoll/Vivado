@@ -8,27 +8,19 @@
         body { font-family: system-ui, sans-serif; background: #121212; color: #e0e0e0; margin: 2rem; max-width: 1200px; }
         h2 { margin-bottom: 5px; color: #4af626; text-transform: uppercase; letter-spacing: 1px; }
         .subtitle { font-size: 0.9rem; color: #888; margin-bottom: 20px; }
-        
-        /* Modular Panels */
         .panel { background: #1e2030; border: 1px solid #2a3050; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
         .panel h3 { margin-top: 0; color: #9cdcfe; font-size: 1.1rem; border-bottom: 1px solid #2a3050; padding-bottom: 8px; }
-        
-        /* Input Forms */
         .form-group { margin-bottom: 12px; display: flex; align-items: center; }
         .form-group label { width: 140px; font-size: 0.9rem; color: #b0b8c8; font-weight: bold; }
         .form-group input { flex: 1; padding: 8px; background: #0d0f1a; border: 1px solid #333; color: #fff; border-radius: 4px; font-family: monospace; font-size: 0.9rem; }
         .form-group input:focus { outline: none; border-color: #007acc; }
         .hint { font-size: 0.75rem; color: #666; margin-left: 140px; margin-top: 4px; display: block; }
-        
-        /* Buttons */
         .controls { display: flex; gap: 10px; margin-bottom: 15px; }
         button { background: #007acc; color: white; border: none; padding: 12px 24px; cursor: pointer; font-weight: bold; border-radius: 4px; transition: background 0.2s; font-size: 1rem; }
         button:disabled { background: #333; color: #666; cursor: not-allowed; }
         button:hover:not(:disabled) { background: #005f9e; }
         button.green { background: #2e7d32; }
         button.green:hover:not(:disabled) { background: #388e3c; }
-        
-        /* Telemetry Log */
         #log { background: #0d0f1a; padding: 15px; height: 350px; overflow-y: auto; font-family: monospace; font-size: 13px; color: #4af626; border: 1px solid #2a3050; border-radius: 6px; white-space: pre-wrap; line-height: 1.4; }
         .error { color: #f97171; font-weight: bold; }
         .warn { color: #ffd43b; }
@@ -66,11 +58,9 @@
         <button id="btn-flash" class="green" disabled>⚡ Flash FPGA</button>
     </div>
     
-    <pre id="log">System Ready. Point to your files and initialize the engine.\n</pre>
+    <pre id="log">System Booting...\n</pre>
 
     <script type="module">
-        import brotliPromise from 'https://cdn.jsdelivr.net/npm/brotli-dec-wasm@2.3.2/index.js';
-
         // ==========================================
         // UI HELPERS & LOGGING
         // ==========================================
@@ -86,10 +76,12 @@
             logEl.scrollTop = logEl.scrollHeight;
         }
 
-        // Auto-convert standard GitHub URLs to jsDelivr raw URLs
+        // Prove the UI script executed successfully
+        log("[SYS] UI Logic Mounted successfully.", "warn");
+
         document.getElementById('cfg-base').addEventListener('blur', (e) => {
             let url = e.target.value.trim();
-            const ghMatch = url.match(/https:\/\/github\.com\/([^\/]+)\/([^\/]+)\/tree\/([^\/]+)\/(.+)/);
+            const ghMatch = url.match(/https:\/\/github\.com\/([^\/]+)\/([^\/]+)\/(?:tree|blob)\/([^\/]+)\/(.+)/);
             if (ghMatch) {
                 const [, user, repo, branch, path] = ghMatch;
                 const converted = `https://cdn.jsdelivr.net/gh/${user}/${repo}@${branch}/${path}`;
@@ -107,10 +99,9 @@
             chipdb: 'xc7s50.bin.br',
             fasmMap: 'xc7s50_fasm_map_v2.json.br',
             yaml: 'part.yaml',
-            idcode: 0x0362F093 // Spartan-7 50
+            idcode: 0x0362F093 
         };
 
-        // IndexedDB Caching (Unchanged, highly rigorous)
         async function openDB() {
             return new Promise((resolve, reject) => {
                 const req = indexedDB.open('fpga-toolchain', 1);
@@ -119,21 +110,32 @@
                 req.onerror = e => reject(e.target.error);
             });
         }
+        
         async function getAsset(id) {
-            const db = await openDB();
-            return new Promise(resolve => {
-                const req = db.transaction('assets', 'readonly').objectStore('assets').get(id);
-                req.onsuccess = () => resolve(req.result);
-                req.onerror = () => resolve(null);
-            });
+            try {
+                const db = await openDB();
+                return new Promise(resolve => {
+                    const req = db.transaction('assets', 'readonly').objectStore('assets').get(id);
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => resolve(null);
+                });
+            } catch (e) {
+                log("[IDB WARN] IndexedDB blocked (likely Incognito mode). Bypassing cache.", "warn");
+                return null;
+            }
         }
+        
         async function saveAsset(id, buffer) {
-            const db = await openDB();
-            return new Promise(resolve => {
-                const req = db.transaction('assets', 'readwrite').objectStore('assets').put(buffer, id);
-                req.onsuccess = () => resolve();
-            });
+            try {
+                const db = await openDB();
+                return new Promise(resolve => {
+                    const req = db.transaction('assets', 'readwrite').objectStore('assets').put(buffer, id);
+                    req.onsuccess = () => resolve();
+                    req.onerror = () => resolve(); // Ignore write errors
+                });
+            } catch(e) { /* Ignore */ }
         }
+        
         async function fetchAndDecompress(url, cacheKey) {
             let data = await getAsset(cacheKey);
             if (data) {
@@ -144,8 +146,13 @@
             const res = await fetch(url);
             if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
             const compressed = new Uint8Array(await res.arrayBuffer());
+            
             log(`[CPU] Decompressing ${cacheKey}...`);
-            const brotli = await brotliPromise;
+            
+            // DYNAMIC IMPORT: Prevents the page from crashing if the CDN is blocked on load
+            const brotliModule = await import('https://cdn.jsdelivr.net/npm/brotli-dec-wasm@2.3.2/index.js');
+            const brotli = await brotliModule.default; 
+            
             const decompressed = brotli.decompress(compressed);
             data = new Uint8Array(decompressed).slice().buffer;
             await saveAsset(cacheKey, data);
@@ -157,7 +164,6 @@
         // ==========================================
         document.getElementById('btn-pnr').addEventListener('click', async () => {
             try {
-                // 1. Read dynamically from the UI
                 const baseUrl = document.getElementById('cfg-base').value.trim().replace(/\/$/, "");
                 const jsonFile = document.getElementById('cfg-json').value.trim();
                 const xdcFile = document.getElementById('cfg-xdc').value.trim();
@@ -167,7 +173,7 @@
                 log(`[MAIN] Locking target: ${jsonFile} & ${xdcFile}`);
                 document.getElementById('btn-pnr').disabled = true;
                 
-                // Assume engine assets are hosted next to index.html (or update to a fixed CDN)
+                // Construct URLs
                 const urlChipDb = `./${ENGINE_ASSETS.chipdb}`;
                 const urlWasm = `./${ENGINE_ASSETS.wasm}`;
                 const urlJson = `${baseUrl}/${jsonFile}`;
@@ -178,7 +184,9 @@
                     fetch(urlWasm), fetch(urlJson), fetch(urlXdc)
                 ]);
 
-                if (!wasmRes.ok || !jsonRes.ok || !xdcRes.ok) throw new Error("Failed to fetch project files or engine assets. Check network tab.");
+                if (!wasmRes.ok) throw new Error(`Failed to fetch Engine Wasm: ${urlWasm}`);
+                if (!jsonRes.ok) throw new Error(`Failed to fetch JSON: ${urlJson}`);
+                if (!xdcRes.ok) throw new Error(`Failed to fetch XDC: ${urlXdc}`);
 
                 const wasmBuffer = await wasmRes.arrayBuffer();
                 const jsonBuffer = await jsonRes.arrayBuffer();
@@ -186,6 +194,9 @@
 
                 log("[MAIN] Spawning P&R Worker...");
                 const worker = new Worker('pnr-worker.js');
+                
+                // Trap silent worker crashes
+                worker.onerror = (err) => log(`[WORKER CRASH] Check if pnr-worker.js exists. Error: ${err.message}`, 'error');
                 
                 worker.onmessage = (e) => {
                     const msg = e.data;
@@ -220,6 +231,8 @@
 
                 log("[MAIN] Assembling Frames...");
                 const fasmWorker = new Worker('fasm2frames.js');
+                fasmWorker.onerror = (err) => log(`[WORKER CRASH] fasm2frames.js failed: ${err.message}`, 'error');
+                
                 await new Promise((resolve, reject) => {
                     fasmWorker.onmessage = (e) => {
                         if (e.data.type === 'success') {
@@ -238,6 +251,8 @@
                 if (!partRes.ok) throw new Error("Failed to fetch part.yaml");
                 
                 const framesWorker = new Worker('frames-worker.js');
+                framesWorker.onerror = (err) => log(`[WORKER CRASH] frames-worker.js failed: ${err.message}`, 'error');
+
                 await new Promise((resolve, reject) => {
                     framesWorker.onmessage = (e) => {
                         if (e.data.type === 'log') log(`[FRAMES] ${e.data.text}`);
@@ -245,7 +260,7 @@
                             pipelineState.bitstream = e.data.bitstream;
                             log(`[MAIN] Bitstream ready: ${pipelineState.bitstream.length} bytes.`, 'warn');
                             resolve();
-                        } else if (e.data.type === 'error') reject(msg.message);
+                        } else if (e.data.type === 'error') reject(e.data.message); // <-- Fixed typo here
                     };
                     framesWorker.postMessage({ type: 'run', partYaml: await partRes.text(), framesStr: pipelineState.framesStr });
                 });
