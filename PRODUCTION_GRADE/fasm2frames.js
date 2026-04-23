@@ -4,21 +4,20 @@ self.onmessage = async function(e) {
         const frameData = new Map();
         const { types: typesMap, grid: gridMap } = mapData;
         const lines = fasmStr.split('\n');
-
         let parsedCount = 0, unmappedCount = 0, unmappedSample = "";
 
         for (let line of lines) {
             line = line.trim();
             if (!line || line.startsWith('#')) continue;
-            
+
             const eqIdx = line.indexOf('=');
             const left = (eqIdx === -1) ? line : line.substring(0, eqIdx).trim();
             const right = (eqIdx === -1) ? null : line.substring(eqIdx + 1).trim();
-            
+
             const parts = left.split('.');
             const tileName = parts[0];
             const gridEntry = gridMap[tileName];
-            
+
             if (!gridEntry) { 
                 unmappedCount++; 
                 unmappedSample = tileName; 
@@ -30,14 +29,21 @@ self.onmessage = async function(e) {
             if (!typeFeatures) continue;
 
             const rawFeatures = [];
+            // Handle [63:0] bitstream expansions
             if (right && right.includes("'b")) {
                 const featureFull = parts.slice(1).join('.');
                 const bracketIdx = featureFull.indexOf('[');
                 const featureBase = featureFull.substring(0, bracketIdx);
-                const high = parseInt(featureFull.match(/\[(\d+):(\d+)\]/)[1], 10);
-                const valStr = right.substring(right.indexOf("'b") + 2);
-                for (let i = 0; i < valStr.length; i++) {
-                    if (valStr[i] === '1') rawFeatures.push(`${featureBase}[${high - i}]`);
+                // Regex to extract indices from [63:0]
+                const rangeMatch = featureFull.match(/\[(\d+):(\d+)\]/);
+                if (rangeMatch) {
+                    const high = parseInt(rangeMatch[1], 10);
+                    const valStr = right.substring(right.indexOf("'b") + 2);
+                    for (let i = 0; i < valStr.length; i++) {
+                        if (valStr[i] === '1') {
+                            rawFeatures.push(`${featureBase}[${high - i}]`);
+                        }
+                    }
                 }
             } else {
                 rawFeatures.push(parts.slice(1).join('.'));
@@ -46,44 +52,61 @@ self.onmessage = async function(e) {
             for (const feat of rawFeatures) {
                 parsedCount++;
                 let coords = null;
-                
-                // --- Recursive Peel-and-Check ---
                 const subParts = feat.split('.');
+
+                // --- Recursive Peel-and-Check with Robust Padding ---
                 for (let start = 0; start < subParts.length; start++) {
                     const candidate = subParts.slice(start).join('.');
                     
-                    // 1. Direct Lookup
-                    coords = typeFeatures[candidate] || 
-                             typeFeatures[candidate.replace(tileType + '.', '')] ||
-                             typeFeatures[candidate.replace('CLBLL.', '').replace('CLBLM.', '')] ||
-                             typeFeatures[candidate.replace('CLBLL_', '').replace('CLBLM_', '')];
-                    
-                    // 2. Dynamic Padding Fallback
+                    // 1. Direct Lookup (e.g. SLICEL_X0.ALUT.INIT[63])
+                    coords = typeFeatures[candidate];
+
+                    // 2. Dynamic Padding Fallback (The Critical Path for [0] -> [00])
                     if (!coords && candidate.endsWith(']')) {
                         const m = candidate.match(/^(.*)\[(\d+)\]$/);
                         if (m) {
-                            const b = m[1], n = m[2];
-                            coords = typeFeatures[`${b}[${n.padStart(2, '0')}]`] || 
-                                     typeFeatures[`${b}[${n.padStart(3, '0')}]`];
+                            const baseName = m[1];
+                            const index = m[2];
+                            // Try 2-digit padding (PrjXray standard) and 3-digit padding
+                            coords = typeFeatures[`${baseName}[${index.padStart(2, '0')}]`] || 
+                                     typeFeatures[`${baseName}[${index.padStart(3, '0')}]`];
                         }
                     }
+
+                    // 3. Prefix stripping fallbacks
+                    if (!coords) {
+                        const stripped = candidate.replace(tileType + '.', '')
+                                                  .replace('CLBLL.', '').replace('CLBLM.', '')
+                                                  .replace('CLBLL_', '').replace('CLBLM_', '');
+                        coords = typeFeatures[stripped];
+                    }
+
                     if (coords) break;
                 }
 
-                if (!coords) { unmappedCount++; unmappedSample = feat; continue; }
-                
+                if (!coords) { 
+                    unmappedCount++; 
+                    unmappedSample = feat; 
+                    continue; 
+                }
+
+                // Apply the bit to the frame map
                 const coordList = Array.isArray(coords[0]) ? coords : [coords];
                 for (const [blockName, wordCol, wordIdx, bitIdx] of coordList) {
                     const baseAddr = bases[blockName];
                     if (baseAddr === undefined) continue;
                     const frameAddr = baseAddr + wordCol;
                     let words = frameData.get(frameAddr);
-                    if (!words) { words = new Uint32Array(101); frameData.set(frameAddr, words); }
+                    if (!words) {
+                        words = new Uint32Array(101);
+                        frameData.set(frameAddr, words);
+                    }
                     words[wordIdx] |= (1 << bitIdx);
                 }
             }
         }
 
+        // Generate output in PrjXray .frames format
         let outputStr = "";
         const sortedAddresses = Array.from(frameData.keys()).sort((a, b) => a - b);
         for (const addr of sortedAddresses) {
@@ -95,7 +118,13 @@ self.onmessage = async function(e) {
             outputStr += line + "\n";
         }
 
-        self.postMessage({ type: 'success', frames: outputStr, 
-            telemetry: `Parsed ${parsedCount}. Unmapped: ${unmappedCount} (e.g. ${unmappedSample})` });
-    } catch (err) { self.postMessage({ type: 'error', message: err.toString() }); }
+        self.postMessage({ 
+            type: 'success', 
+            frames: outputStr, 
+            telemetry: `Parsed ${parsedCount}. Unmapped: ${unmappedCount} (Sample: ${unmappedSample})` 
+        });
+
+    } catch (err) { 
+        self.postMessage({ type: 'error', message: err.toString() }); 
+    }
 };
