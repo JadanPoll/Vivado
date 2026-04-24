@@ -1,407 +1,826 @@
 <!DOCTYPE html>
-
 <html lang="en">
-
 <head>
-
     <meta charset="UTF-8">
-
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <title>Browser FPGA Pipeline (XC7S50)</title>
-
+    <title>ZeroLabs: Universal Silicon IDE (Diagnostic)</title>
     <style>
-
-        body { font-family: system-ui, sans-serif; background: #121212; color: #e0e0e0; margin: 2rem; }
-
-        button { background: #007acc; color: white; border: none; padding: 10px 20px; cursor: pointer; margin-right: 10px; font-weight: bold; border-radius: 4px; }
-
-        button:disabled { background: #333; cursor: not-allowed; }
-
-        #log { background: #1e1e1e; padding: 15px; height: 400px; overflow-y: auto; font-family: monospace; font-size: 13px; color: #4af626; border: 1px solid #333; margin-top: 15px; white-space: pre-wrap; }
-
-        .error { color: #ff5555; }
-
+        body { font-family: system-ui, sans-serif; background: #121212; color: #e0e0e0; margin: 2rem; max-width: 1400px; margin-left: auto; margin-right: auto; }
+        h2 { margin-bottom: 5px; color: #4af626; text-transform: uppercase; letter-spacing: 1px; }
+        .subtitle { font-size: 0.9rem; color: #888; margin-bottom: 20px; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 15px; border-bottom: 1px solid #2a3050; padding-bottom: 10px; }
+        .tab { background: transparent; color: #888; border: none; padding: 10px 20px; cursor: pointer; font-weight: bold; border-radius: 4px; transition: all 0.2s; font-size: 0.95rem; }
+        .tab.active { background: #1565c0; color: #fff; }
+        .panel { background: #1e2030; border: 1px solid #2a3050; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+        .panel h3 { margin-top: 0; color: #9cdcfe; font-size: 1.1rem; border-bottom: 1px solid #2a3050; padding-bottom: 8px; }
+        .form-group { margin-bottom: 12px; display: flex; align-items: center; }
+        .form-group label { width: 140px; font-size: 0.9rem; color: #b0b8c8; font-weight: bold; }
+        .form-group input { flex: 1; padding: 8px; background: #0d0f1a; border: 1px solid #333; color: #fff; border-radius: 4px; font-family: monospace; font-size: 0.9rem; }
+        .editor-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        textarea { width: 100%; height: 280px; font-family: monospace; font-size: 0.85rem; background: #000; color: #ce9178; border: 1px solid #3a2a1a; border-radius: 6px; padding: 12px; resize: vertical; line-height: 1.45; box-sizing: border-box; }
+        .hidden { display: none !important; }
+        
+        .controls { display: flex; gap: 10px; margin-bottom: 15px; margin-top: 15px; flex-wrap: wrap; }
+        button.action-btn { background: #007acc; color: white; border: none; padding: 12px 24px; cursor: pointer; font-weight: bold; border-radius: 4px; transition: background 0.2s; font-size: 1rem; }
+        button.action-btn:disabled { background: #333; color: #666; cursor: not-allowed; }
+        button.action-btn:hover:not(:disabled) { background: #005f9e; }
+        button.action-btn.green { background: #2e7d32; }
+        button.action-btn.gray { background: #455a64; }
+        button.action-btn.gray:hover:not(:disabled) { background: #607d8b; }
+        
+        #log { background: #0d0f1a; padding: 15px; height: 350px; overflow-y: auto; font-family: monospace; font-size: 13px; color: #4af626; border: 1px solid #2a3050; border-radius: 6px; white-space: pre-wrap; line-height: 1.4; }
+        .error { color: #f97171; font-weight: bold; }
+        .warn { color: #ffd43b; }
     </style>
-
     <script src="ftdi-jtag.js"></script>
-
 </head>
-
 <body>
 
-
-
-    <h2>XC7S50 Browser Pipeline</h2>
-
-    <div>
-
-        <button id="btn-pnr">1. Run P&R (Worker)</button>
-
-        <button id="btn-flash" disabled>2. Flash Board (WebUSB)</button>
-
+    <h2>⚡ ZeroLabs Web IDE</h2>
+    <div class="subtitle">Diagnostic Build: Inspecting VFS Buffer Handshake</div>
+    
+    <div class="tabs">
+        <button id="tab-editor" class="tab active">Live Editor (Auto-Synthesis)</button>
+        <button id="tab-repo" class="tab">GitHub / Remote Repo</button>
     </div>
 
-    <pre id="log">System Ready. Awaiting commands...\n</pre>
+    <div id="view-editor">
+        <div class="panel" style="margin-bottom: 15px;">
+            <div class="form-group">
+                <label for="cfg-top-editor">Top Module</label>
+                <input type="text" id="cfg-top-editor" value="top">
+            </div>
+        </div>
+        <div class="editor-grid">
+            <div class="panel">
+                <h3>Verilog Source (.v)</h3>
+                <textarea id="code-verilog" spellcheck="false">
+module top (
+    input  logic        clk,
+    output logic [15:0] LED
+);
+    // Sequential logic to increment the counter
+    logic [15:0] divider;
+    always_ff @(posedge clk) begin
+       divider <= divider + 1;
+       if (divider == 0) begin 
+            LED <= LED + 1;
+       end
+    end
+endmodule
+                </textarea>
+            </div>
+            <div class="panel">
+                <h3>Urbana Constraints (.xdc)</h3>
+                <textarea id="code-xdc" spellcheck="false" style="color: #9cdcfe;">
+# URBANA BOARD CONSTRAINTS V2I1 1/3/2023 
+# clk input is from the 100 MHz oscillator on Urbana board
+#create_clock -period 10.000 -name gclk [get_ports clk]
+set_property -dict {PACKAGE_PIN N15 IOSTANDARD LVCMOS33} [get_ports {clk}]
 
+# Set Bank 0 voltage
+set_property CFGBVS VCCO [current_design]
+set_property CONFIG_VOLTAGE 3.3 [current_design]
+set_property BITSTREAM.Config.SPI_buswidth 4 [current_design]
 
+# On-board Slide Switches
+set_property -dict {PACKAGE_PIN G1 IOSTANDARD LVCMOS25} [get_ports {SW[0]}]
+set_property -dict {PACKAGE_PIN F2 IOSTANDARD LVCMOS25} [get_ports {SW[1]}]
+set_property -dict {PACKAGE_PIN F1 IOSTANDARD LVCMOS25} [get_ports {SW[2]}]
+set_property -dict {PACKAGE_PIN E2 IOSTANDARD LVCMOS25} [get_ports {SW[3]}]
+set_property -dict {PACKAGE_PIN E1 IOSTANDARD LVCMOS25} [get_ports {SW[4]}]
+set_property -dict {PACKAGE_PIN D2 IOSTANDARD LVCMOS25} [get_ports {SW[5]}]
+set_property -dict {PACKAGE_PIN D1 IOSTANDARD LVCMOS25} [get_ports {SW[6]}]
+set_property -dict {PACKAGE_PIN C2 IOSTANDARD LVCMOS25} [get_ports {SW[7]}]
+set_property -dict {PACKAGE_PIN B2 IOSTANDARD LVCMOS25} [get_ports {SW[8]}]
+set_property -dict {PACKAGE_PIN A4 IOSTANDARD LVCMOS25} [get_ports {SW[9]}]
+set_property -dict {PACKAGE_PIN A5 IOSTANDARD LVCMOS25} [get_ports {SW[10]}]
+set_property -dict {PACKAGE_PIN A6 IOSTANDARD LVCMOS25} [get_ports {SW[11]}]
+set_property -dict {PACKAGE_PIN C7 IOSTANDARD LVCMOS25} [get_ports {SW[12]}]
+set_property -dict {PACKAGE_PIN A7 IOSTANDARD LVCMOS25} [get_ports {SW[13]}]
+set_property -dict {PACKAGE_PIN B7 IOSTANDARD LVCMOS25} [get_ports {SW[14]}]
+set_property -dict {PACKAGE_PIN A8 IOSTANDARD LVCMOS25} [get_ports {SW[15]}]
+
+# On-board LEDs
+set_property -dict {PACKAGE_PIN C13 IOSTANDARD LVCMOS33} [get_ports {LED[0]}]
+set_property -dict {PACKAGE_PIN C14 IOSTANDARD LVCMOS33} [get_ports {LED[1]}]
+set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
+set_property -dict {PACKAGE_PIN D15 IOSTANDARD LVCMOS33} [get_ports {LED[3]}]
+set_property -dict {PACKAGE_PIN D16 IOSTANDARD LVCMOS33} [get_ports {LED[4]}]
+set_property -dict {PACKAGE_PIN F18 IOSTANDARD LVCMOS33} [get_ports {LED[5]}]
+set_property -dict {PACKAGE_PIN E17 IOSTANDARD LVCMOS33} [get_ports {LED[6]}]
+set_property -dict {PACKAGE_PIN D17 IOSTANDARD LVCMOS33} [get_ports {LED[7]}]
+set_property -dict {PACKAGE_PIN C17 IOSTANDARD LVCMOS33} [get_ports {LED[8]}]
+set_property -dict {PACKAGE_PIN B18 IOSTANDARD LVCMOS33} [get_ports {LED[9]}]
+set_property -dict {PACKAGE_PIN A17 IOSTANDARD LVCMOS33} [get_ports {LED[10]}]
+set_property -dict {PACKAGE_PIN B17 IOSTANDARD LVCMOS33} [get_ports {LED[11]}]
+set_property -dict {PACKAGE_PIN C18 IOSTANDARD LVCMOS33} [get_ports {LED[12]}]
+set_property -dict {PACKAGE_PIN D18 IOSTANDARD LVCMOS33} [get_ports {LED[13]}]
+set_property -dict {PACKAGE_PIN E18 IOSTANDARD LVCMOS33} [get_ports {LED[14]}]
+set_property -dict {PACKAGE_PIN G17 IOSTANDARD LVCMOS33} [get_ports {LED[15]}]
+
+# On-board Buttons
+set_property -dict {PACKAGE_PIN J2 IOSTANDARD LVCMOS25} [get_ports {BTN[0]}]
+set_property -dict {PACKAGE_PIN J1 IOSTANDARD LVCMOS25} [get_ports {BTN[1]}]
+set_property -dict {PACKAGE_PIN G2 IOSTANDARD LVCMOS25} [get_ports {BTN[2]}]
+set_property -dict {PACKAGE_PIN H2 IOSTANDARD LVCMOS25} [get_ports {BTN[3]}]
+
+# On-board color LEDs
+set_property -dict {PACKAGE_PIN C9 IOSTANDARD LVCMOS33} [get_ports {RGB0[0]}];   # RBG0_R
+set_property -dict {PACKAGE_PIN A9 IOSTANDARD LVCMOS33} [get_ports {RGB0[1]}];   # RBG0_G
+set_property -dict {PACKAGE_PIN A10 IOSTANDARD LVCMOS33} [get_ports {RGB0[2]}];   # RBG0_B
+set_property -dict {PACKAGE_PIN A11 IOSTANDARD LVCMOS33} [get_ports {RGB1[0]}];   # RBG1_R
+set_property -dict {PACKAGE_PIN C10 IOSTANDARD LVCMOS33} [get_ports {RGB1[1]}];   # RBG1_G
+set_property -dict {PACKAGE_PIN B11 IOSTANDARD LVCMOS33} [get_ports {RGB1[2]}];   # RBG1_B
+
+# On-board 7-Segment display 0
+set_property -dict {PACKAGE_PIN G6 IOSTANDARD LVCMOS25} [get_ports {D0_AN[0]}]  # Active LOW
+set_property -dict {PACKAGE_PIN H6 IOSTANDARD LVCMOS25} [get_ports {D0_AN[1]}]  # Active LOW
+set_property -dict {PACKAGE_PIN C3 IOSTANDARD LVCMOS25} [get_ports {D0_AN[2]}]  # Active LOW
+set_property -dict {PACKAGE_PIN B3 IOSTANDARD LVCMOS25} [get_ports {D0_AN[3]}]  # Active LOW
+set_property -dict {PACKAGE_PIN E6 IOSTANDARD LVCMOS25} [get_ports {D0_SEG[0]}];  # CA Active LOW
+set_property -dict {PACKAGE_PIN B4 IOSTANDARD LVCMOS25} [get_ports {D0_SEG[1]}];  # CB Active LOW
+set_property -dict {PACKAGE_PIN D5 IOSTANDARD LVCMOS25} [get_ports {D0_SEG[2]}];  # CC Active LOW
+set_property -dict {PACKAGE_PIN C5 IOSTANDARD LVCMOS25} [get_ports {D0_SEG[3]}];  # CD Active LOW
+set_property -dict {PACKAGE_PIN D7 IOSTANDARD LVCMOS25} [get_ports {D0_SEG[4]}];  # CE Active LOW
+set_property -dict {PACKAGE_PIN D6 IOSTANDARD LVCMOS25} [get_ports {D0_SEG[5]}];  # CF Active LOW
+set_property -dict {PACKAGE_PIN C4 IOSTANDARD LVCMOS25} [get_ports {D0_SEG[6]}];  # CG Active LOW
+set_property -dict {PACKAGE_PIN B5 IOSTANDARD LVCMOS25} [get_ports {D0_SEG[7]}];  # CDP Active LOW
+
+# On-board 7-Segment display 1
+set_property -dict {PACKAGE_PIN E4 IOSTANDARD LVCMOS25} [get_ports {D1_AN[0]}]  # Active LOW
+set_property -dict {PACKAGE_PIN E3 IOSTANDARD LVCMOS25} [get_ports {D1_AN[1]}]  # Active LOW
+set_property -dict {PACKAGE_PIN F5 IOSTANDARD LVCMOS25} [get_ports {D1_AN[2]}]  # Active LOW
+set_property -dict {PACKAGE_PIN H5 IOSTANDARD LVCMOS25} [get_ports {D1_AN[3]}]  # Active LOW
+set_property -dict {PACKAGE_PIN F3 IOSTANDARD LVCMOS25} [get_ports {D1_SEG[0]}];  # CA Active LOW
+set_property -dict {PACKAGE_PIN G5 IOSTANDARD LVCMOS25} [get_ports {D1_SEG[1]}];  # CB Active LOW
+set_property -dict {PACKAGE_PIN J3 IOSTANDARD LVCMOS25} [get_ports {D1_SEG[2]}];  # CC Active LOW
+set_property -dict {PACKAGE_PIN H4 IOSTANDARD LVCMOS25} [get_ports {D1_SEG[3]}];  # CD Active LOW
+set_property -dict {PACKAGE_PIN F4 IOSTANDARD LVCMOS25} [get_ports {D1_SEG[4]}];  # CE Active LOW
+set_property -dict {PACKAGE_PIN H3 IOSTANDARD LVCMOS25} [get_ports {D1_SEG[5]}];  # CF Active LOW
+set_property -dict {PACKAGE_PIN E5 IOSTANDARD LVCMOS25} [get_ports {D1_SEG[6]}];  # CG Active LOW
+set_property -dict {PACKAGE_PIN J4 IOSTANDARD LVCMOS25} [get_ports {D1_SEG[7]}];  # CDP Active LOW
+
+#HDMI Signals
+set_property -dict {PACKAGE_PIN U17 IOSTANDARD TDMS_33} [get_ports {HDMI_DO_P}]
+set_property -dict {PACKAGE_PIN U18 IOSTANDARD TDMS_33} [get_ports {HDMI_D0_N}]
+set_property -dict {PACKAGE_PIN R16 IOSTANDARD TDMS_33} [get_ports {HDMI_D1_P}]
+set_property -dict {PACKAGE_PIN R17 IOSTANDARD TDMS_33} [get_ports {HDMI_D1_N}]
+set_property -dict {PACKAGE_PIN R14 IOSTANDARD TDMS_33} [get_ports {HDMI_D2_P}]
+set_property -dict {PACKAGE_PIN T14 IOSTANDARD TDMS_33} [get_ports {HDMI_D2_N}]
+set_property -dict {PACKAGE_PIN U16 IOSTANDARD TDMS_33} [get_ports {HDMI_CLK_P}]
+set_property -dict {PACKAGE_PIN V17 IOSTANDARD TDMS_33} [get_ports {HDMI_CLK_N}]
+set_property -dict {PACKAGE_PIN R15 IOSTANDARD LVCMOS33} [get_ports {HDMI_CEC_IN}]
+set_property -dict {PACKAGE_PIN T15 IOSTANDARD LVCMOS33} [get_ports {HDMI_HPD}]
+set_property -dict {PACKAGE_PIN U15 IOSTANDARD LVCMOS33} [get_ports {HDMI_I2C_SCL}]
+set_property -dict {PACKAGE_PIN V16 IOSTANDARD LVCMOS33} [get_ports {HDMI_I2C-SDA}]
+
+# USB host signals
+set_property -dict {PACKAGE_PIN U12 IOSTANDARD LVCMOS33} [get_ports {USB_SPI_MISO}]
+set_property -dict {PACKAGE_PIN V15 IOSTANDARD LVCMOS33} [get_ports {USB_SPI_MOSI}]
+set_property -dict {PACKAGE_PIN V14 IOSTANDARD LVCMOS33} [get_ports {USB_SPI_CCLK}]
+set_property -dict {PACKAGE_PIN T12 IOSTANDARD LVCMOS33} [get_ports {USB_SS_B}]
+set_property -dict {PACKAGE_PIN V13 IOSTANDARD LVCMOS33} [get_ports {USB_RESET_B}]
+set_property -dict {PACKAGE_PIN T13 IOSTANDARD LVCMOS33} [get_ports {USB_INT}]
+
+# SD socket signals
+set_property -dict {PACKAGE_PIN M16 IOSTANDARD LVCMOS33} [get_ports {SD_DQ0}]
+set_property -dict {PACKAGE_PIN M17 IOSTANDARD LVCMOS33} [get_ports {SD_DQ1}]
+set_property -dict {PACKAGE_PIN M18 IOSTANDARD LVCMOS33} [get_ports {SD_DQ2}]
+set_property -dict {PACKAGE_PIN N18 IOSTANDARD LVCMOS33} [get_ports {SD_DQ3}]
+set_property -dict {PACKAGE_PIN P17 IOSTANDARD LVCMOS33} [get_ports {SD_CMD}]
+set_property -dict {PACKAGE_PIN P18 IOSTANDARD LVCMOS33} [get_ports {SD_CLK}]
+set_property -dict {PACKAGE_PIN R18 IOSTANDARD LVCMOS33} [get_ports {SD_CD_N}]
+
+# PWM audio out signals
+set_property -dict {PACKAGE_PIN B13 IOSTANDARD LVCMOS33} [get_ports {SPKL}]
+set_property -dict {PACKAGE_PIN B14 IOSTANDARD LVCMOS33} [get_ports {SPKR}]
+
+# PWM Microphone signals
+set_property -dict {PACKAGE_PIN E12 IOSTANDARD LVCMOS33} [get_ports {MIC_CLK}]
+set_property -dict {PACKAGE_PIN D12 IOSTANDARD LVCMOS33} [get_ports {MIC_DATA}]
+
+# Analog/Joysitck inputs
+set_property -dict {PACKAGE_PIN B15 IOSTANDARD LVCMOS33} [get_ports {AD1_P}]
+set_property -dict {PACKAGE_PIN A15 IOSTANDARD LVCMOS33} [get_ports {AD1_N}]
+set_property -dict {PACKAGE_PIN A3 IOSTANDARD LVCMOS33} [get_ports {AD15_P}]
+set_property -dict {PACKAGE_PIN A2 IOSTANDARD LVCMOS33} [get_ports {AD15_N}]
+set_property -dict {PACKAGE_PIN F6 IOSTANDARD LVCMOS25} [get_ports {SEL_JOYSTICK}]
+
+# UART signals
+set_property -dict {PACKAGE_PIN G15 IOSTANDARD LVCMOS33} [get_ports {BLE_UART_TXD}]
+set_property -dict {PACKAGE_PIN E13 IOSTANDARD LVCMOS33} [get_ports {BLE_UART_RXD}]
+set_property -dict {PACKAGE_PIN H15 IOSTANDARD LVCMOS33} [get_ports {BLE_UART_RTS}]
+set_property -dict {PACKAGE_PIN F13 IOSTANDARD LVCMOS33} [get_ports {BLE_UART_CTS}]
+set_property -dict {PACKAGE_PIN B16 IOSTANDARD LVCMOS33} [get_ports {UART_TXD}]
+set_property -dict {PACKAGE_PIN A16 IOSTANDARD LVCMOS33} [get_ports {UART_RXD}]
+
+#QSPI signals
+set_property -dict {PACKAGE_PIN K17 IOSTANDARD LVCMOS33} [get_ports {QSPI_DQ0}]
+set_property -dict {PACKAGE_PIN K18 IOSTANDARD LVCMOS33} [get_ports {QSPI_DQ1}]
+set_property -dict {PACKAGE_PIN L14 IOSTANDARD LVCMOS33} [get_ports {QSPI_DQ2}]
+set_property -dict {PACKAGE_PIN M15 IOSTANDARD LVCMOS33} [get_ports {QSPI_DQ3}]
+set_property -dict {PACKAGE_PIN M13 IOSTANDARD LVCMOS33} [get_ports {QSPI_CS_B}]
+set_property -dict {PACKAGE_PIN N13 IOSTANDARD LVCMOS33} [get_ports {QSPI_RESET_B}]
+
+# Servomotor signals
+set_property -dict {PACKAGE_PIN L18 IOSTANDARD LVCMOS33} [get_ports {SERVO0}]
+set_property -dict {PACKAGE_PIN L17 IOSTANDARD LVCMOS33} [get_ports {SERVO1}]
+set_property -dict {PACKAGE_PIN N14 IOSTANDARD LVCMOS33} [get_ports {SERVO2}]
+set_property -dict {PACKAGE_PIN M14 IOSTANDARD LVCMOS33} [get_ports {SERVO3}]
+
+# PMOD A Signals
+set_property -dict {PACKAGE_PIN F14 IOSTANDARD LVCMOS33} [get_ports {JA1_P}]
+set_property -dict {PACKAGE_PIN F15 IOSTANDARD LVCMOS33} [get_ports {JA1_N}]
+set_property -dict {PACKAGE_PIN H13 IOSTANDARD LVCMOS33} [get_ports {JA2_P}]
+set_property -dict {PACKAGE_PIN H14 IOSTANDARD LVCMOS33} [get_ports {JA2_N}]
+set_property -dict {PACKAGE_PIN J13 IOSTANDARD LVCMOS33} [get_ports {JA3_P}]
+set_property -dict {PACKAGE_PIN J14 IOSTANDARD LVCMOS33} [get_ports {JA3_N}]
+set_property -dict {PACKAGE_PIN E14 IOSTANDARD LVCMOS33} [get_ports {JA4_P}]
+set_property -dict {PACKAGE_PIN E15 IOSTANDARD LVCMOS33} [get_ports {JA4_N}]
+
+# PMOD B Signals
+set_property -dict {PACKAGE_PIN H18 IOSTANDARD LVCMOS33} [get_ports {JB1_P}]
+set_property -dict {PACKAGE_PIN G18 IOSTANDARD LVCMOS33} [get_ports {JB1_N}]
+set_property -dict {PACKAGE_PIN H13 IOSTANDARD LVCMOS33} [get_ports {JB2_P}]
+set_property -dict {PACKAGE_PIN H14 IOSTANDARD LVCMOS33} [get_ports {JB2_N}]
+set_property -dict {PACKAGE_PIN H16 IOSTANDARD LVCMOS33} [get_ports {JB3_P}]
+set_property -dict {PACKAGE_PIN H17 IOSTANDARD LVCMOS33} [get_ports {JB3_N}]
+set_property -dict {PACKAGE_PIN K16 IOSTANDARD LVCMOS33} [get_ports {JB4_P}]
+set_property -dict {PACKAGE_PIN J16 IOSTANDARD LVCMOS33} [get_ports {JB4_N}]
+
+# PMOD AB Signals
+set_property -dict {PACKAGE_PIN D11 IOSTANDARD LVCMOS33} [get_ports {JAB_0}]
+set_property -dict {PACKAGE_PIN C12 IOSTANDARD LVCMOS33} [get_ports {JAB_1}]
+set_property -dict {PACKAGE_PIN E16 IOSTANDARD LVCMOS33} [get_ports {JAB_2}]
+set_property -dict {PACKAGE_PIN G16 IOSTANDARD LVCMOS33} [get_ports {JAB_3}]
+set_property -dict {PACKAGE_PIN C11 IOSTANDARD LVCMOS33} [get_ports {JAB_4}]
+set_property -dict {PACKAGE_PIN D10 IOSTANDARD LVCMOS33} [get_ports {JAB_5}]
+
+# DDR3 signals
+set_property IO_BUFFER_TYPE NONE [get_ports {ddr3_ck_n[0]}]
+set_property IO_BUFFER_TYPE NONE [get_ports {ddr3_ck_p[0]}]
+
+# PadFunction: IO_L1N_T0_34 (SCHEMATIC DDR_DQ0)
+current_instance -quiet
+set_property SLEW FAST [get_ports {ddr3_dq[0]}]
+set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[0]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[0]}]
+set_property PACKAGE_PIN K2 [get_ports {ddr3_dq[0]}]
+
+# PadFunction: IO_L2P_T0_34 (SCHEMATIC DDR_DQ1)
+set_property SLEW FAST [get_ports {ddr3_dq[1]}]
+set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[1]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[1]}]
+set_property PACKAGE_PIN M4 [get_ports {ddr3_dq[1]}]
+
+# PadFunction: IO_L2N_T0_34 (SCHEMATIC DDR_DQ2)
+set_property SLEW FAST [get_ports {ddr3_dq[2]}]
+set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[2]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[2]}]
+set_property PACKAGE_PIN K3 [get_ports {ddr3_dq[2]}]
+
+# PadFunction: IO_L4P_T0_34 (SCHEMATIC DDR_DQ3)
+set_property SLEW FAST [get_ports {ddr3_dq[3]}]
+set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[3]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[3]}]
+set_property PACKAGE_PIN L5 [get_ports {ddr3_dq[3]}]
+
+# PadFunction: IO_L4N_T0_34 (SCHEMATIC DDR_DQ4)
+set_property SLEW FAST [get_ports {ddr3_dq[4]}]
+set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[4]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[4]}]
+set_property PACKAGE_PIN L6 [get_ports {ddr3_dq[4]}]
+
+# PadFunction: IO_L5P_T0_34 (SCHEMATIC DDR_DQ5)
+set_property SLEW FAST [get_ports {ddr3_dq[5]}]
+set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[5]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[5]}]
+set_property PACKAGE_PIN M6 [get_ports {ddr3_dq[5]}]
+
+# PadFunction: IO_L5N_T0_34 (SCHEMATIC DDR_DQ6)
+set_property SLEW FAST [get_ports {ddr3_dq[6]}]
+set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[6]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[6]}]
+set_property PACKAGE_PIN L4 [get_ports {ddr3_dq[6]}]
+
+# PadFunction: IO_L6P_T0_34 (SCHEMATIC DDR_DQ7)
+set_property SLEW FAST [get_ports {ddr3_dq[7]}]
+set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[7]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[7]}]
+set_property PACKAGE_PIN K6 [get_ports {ddr3_dq[7]}]
+
+# PadFunction: IO_L7N_T1_34 (SCHEMATIC DDR_DQ8)
+set_property SLEW FAST [get_ports {ddr3_dq[8]}]
+set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[8]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[8]}]
+set_property PACKAGE_PIN N5 [get_ports {ddr3_dq[8]}]
+
+# PadFunction: IO_L8P_T1_34 (SCHEMATIC DDR_DQ9)
+set_property SLEW FAST [get_ports {ddr3_dq[9]}]
+set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[9]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[9]}]
+set_property PACKAGE_PIN M1 [get_ports {ddr3_dq[9]}]
+
+# PadFunction: IO_L8N_T1_34 (SCHEMATIC DDR_DQ10)
+set_property SLEW FAST [get_ports {ddr3_dq[10]}]
+set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[10]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[10]}]
+set_property PACKAGE_PIN P1 [get_ports {ddr3_dq[10]}]
+
+# PadFunction: IO_L10P_T1_34 (SCHEMATIC DDR_DQ11)
+set_property SLEW FAST [get_ports {ddr3_dq[11]}]
+set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[11]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[11]}]
+set_property PACKAGE_PIN N1 [get_ports {ddr3_dq[11]}]
+
+# PadFunction: IO_L10N_T1_34 (SCHEMATIC DDR_DQ12)
+set_property SLEW FAST [get_ports {ddr3_dq[12]}]
+set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[12]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[12]}]
+set_property PACKAGE_PIN R2 [get_ports {ddr3_dq[12]}]
+
+# PadFunction: IO_L11P_T1_SRCC_34 (SCHEMATIC DDR_DQ13)
+set_property SLEW FAST [get_ports {ddr3_dq[13]}]
+set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[13]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[13]}]
+set_property PACKAGE_PIN N4 [get_ports {ddr3_dq[13]}]
+
+# PadFunction: IO_L11N_T1_SRCC_34 (SCHEMATIC DDR_DQ14)
+set_property SLEW FAST [get_ports {ddr3_dq[14]}]
+set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[14]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[14]}]
+set_property PACKAGE_PIN P2 [get_ports {ddr3_dq[14]}]
+
+# PadFunction: IO_L12P_T1_MRCC_34 (SCHEMATIC DDR_DQ15)
+set_property SLEW FAST [get_ports {ddr3_dq[15]}]
+set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[15]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[15]}]
+set_property PACKAGE_PIN M2 [get_ports {ddr3_dq[15]}]
+
+# PadFunction: IO_L13P_T2_MRCC_34 (SCHEMATIC DDR_A14)
+set_property SLEW FAST [get_ports {ddr3_addr[14]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[14]}]
+set_property PACKAGE_PIN R6 [get_ports {ddr3_addr[14]}]
+
+# PadFunction: IO_L13N_T2_MRCC_34 (SCHEMATIC DDR_A13)
+set_property SLEW FAST [get_ports {ddr3_addr[13]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[13]}]
+set_property PACKAGE_PIN V7 [get_ports {ddr3_addr[13]}]
+
+# PadFunction: IO_L14P_T2_SRCC_34 (SCHEMATIC DDR_A12)
+set_property SLEW FAST [get_ports {ddr3_addr[12]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[12]}]
+set_property PACKAGE_PIN V6 [get_ports {ddr3_addr[12]}]
+
+# PadFunction: IO_L14N_T2_SRCC_34 (SCHEMATIC DDR_A11)
+set_property SLEW FAST [get_ports {ddr3_addr[11]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[11]}]
+set_property PACKAGE_PIN P5 [get_ports {ddr3_addr[11]}]
+
+# PadFunction: IO_L15P_T2_DQS_34 (SCHEMATIC DDR_A10)
+set_property SLEW FAST [get_ports {ddr3_addr[10]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[10]}]
+set_property PACKAGE_PIN U3 [get_ports {ddr3_addr[10]}]
+
+# PadFunction: IO_L15N_T2_DQS_34 (SCHEMATIC DDR_A9)
+set_property SLEW FAST [get_ports {ddr3_addr[9]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[9]}]
+set_property PACKAGE_PIN U6 [get_ports {ddr3_addr[9]}]
+
+# PadFunction: IO_L16P_T2_34 (SCHEMATIC DDR_A8)
+set_property SLEW FAST [get_ports {ddr3_addr[8]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[8]}]
+set_property PACKAGE_PIN R7 [get_ports {ddr3_addr[8]}]
+
+# PadFunction: IO_L16N_T2_34 (SCHEMATIC DDR_A7)
+set_property SLEW FAST [get_ports {ddr3_addr[7]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[7]}]
+set_property PACKAGE_PIN U7 [get_ports {ddr3_addr[7]}]
+
+# PadFunction: IO_L17P_T2_34 (SCHEMATIC DDR_A6)
+set_property SLEW FAST [get_ports {ddr3_addr[6]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[6]}]
+set_property PACKAGE_PIN V5 [get_ports {ddr3_addr[6]}]
+
+# PadFunction: IO_L17N_T2_34 (SCHEMATIC DDR_A5)
+set_property SLEW FAST [get_ports {ddr3_addr[5]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[5]}]
+set_property PACKAGE_PIN T1 [get_ports {ddr3_addr[5]}]
+
+# PadFunction: IO_L18P_T2_34 (SCHEMATIC DDR_A4)
+set_property SLEW FAST [get_ports {ddr3_addr[4]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[4]}]
+set_property PACKAGE_PIN T6 [get_ports {ddr3_addr[4]}]
+
+# PadFunction: IO_L18N_T2_34 (SCHEMATIC DDR_A3)
+set_property SLEW FAST [get_ports {ddr3_addr[3]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[3]}]
+set_property PACKAGE_PIN T3 [get_ports {ddr3_addr[3]}]
+
+# PadFunction: IO_L19P_T3_34 (SCHEMATIC DDR_A2)
+set_property SLEW FAST [get_ports {ddr3_addr[2]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[2]}]
+set_property PACKAGE_PIN P6 [get_ports {ddr3_addr[2]}]
+
+# PadFunction: IO_L19N_T3_VREF_34 (SCHEMATIC DDR_A1)
+set_property SLEW FAST [get_ports {ddr3_addr[1]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[1]}]
+set_property PACKAGE_PIN R4 [get_ports {ddr3_addr[1]}]
+
+# PadFunction: IO_L20P_T3_34 (SCHEMATIC DDR_A0)
+set_property SLEW FAST [get_ports {ddr3_addr[0]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[0]}]
+set_property PACKAGE_PIN V3 [get_ports {ddr3_addr[0]}]
+
+# PadFunction: IO_L20N_T3_34 (SCHEMATIC DDR_BA2)
+set_property SLEW FAST [get_ports {ddr3_ba[2]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_ba[2]}]
+set_property PACKAGE_PIN R3 [get_ports {ddr3_ba[2]}]
+
+# PadFunction: IO_L22P_T3_34 (SCHEMATIC DDR_BA1)
+set_property SLEW FAST [get_ports {ddr3_ba[1]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_ba[1]}]
+set_property PACKAGE_PIN V4 [get_ports {ddr3_ba[1]}]
+
+# PadFunction: IO_L22N_T3_34 (SCHEMATIC DDR_BA0)
+set_property SLEW FAST [get_ports {ddr3_ba[0]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_ba[0]}]
+set_property PACKAGE_PIN V2 [get_ports {ddr3_ba[0]}]
+
+# PadFunction: IO_L23P_T3_34 (SCHEMATIC DDR_RAS_B
+set_property SLEW FAST [get_ports ddr3_ras_n]
+set_property IOSTANDARD SSTL135 [get_ports ddr3_ras_n]
+set_property PACKAGE_PIN U2 [get_ports ddr3_ras_n]
+
+# PadFunction: IO_L23N_T3_34 (SCHEMATIC DDR_CAS_B)
+set_property SLEW FAST [get_ports ddr3_cas_n]
+set_property IOSTANDARD SSTL135 [get_ports ddr3_cas_n]
+set_property PACKAGE_PIN U1 [get_ports ddr3_cas_n]
+
+# PadFunction: IO_L24P_T3_34 (SCHEMATIC DDR_WE_B)
+set_property SLEW FAST [get_ports ddr3_we_n]
+set_property IOSTANDARD SSTL135 [get_ports ddr3_we_n]
+set_property PACKAGE_PIN T2 [get_ports ddr3_we_n]
+
+# PadFunction: IO_L6N_T0_VREF_34 (SCHEMATIC DDR_RESET_B)
+set_property SLEW FAST [get_ports ddr3_reset_n]
+set_property IOSTANDARD SSTL135 [get_ports ddr3_reset_n]
+set_property PACKAGE_PIN M5 [get_ports ddr3_reset_n]
+
+# PadFunction: IO_L24N_T3_34 (SCHEMATIC DDR_CKE)
+set_property SLEW FAST [get_ports {ddr3_cke[0]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_cke[0]}]
+set_property PACKAGE_PIN T5 [get_ports {ddr3_cke[0]}]
+
+# PadFunction: IO_25_34 (SCHEMATIC DDR_ODT)
+set_property SLEW FAST [get_ports {ddr3_odt[0]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_odt[0]}]
+set_property PACKAGE_PIN P7 [get_ports {ddr3_odt[0]}]
+
+# PadFunction: IO_L1P_T0_34 (SCHEMATIC DDR_LDM)
+set_property SLEW FAST [get_ports {ddr3_dm[0]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_dm[0]}]
+set_property PACKAGE_PIN K4 [get_ports {ddr3_dm[0]}]
+
+# PadFunction: IO_L7P_T1_34 (SCHEMATIC DDR_UDM)
+set_property SLEW FAST [get_ports {ddr3_dm[1]}]
+set_property IOSTANDARD SSTL135 [get_ports {ddr3_dm[1]}]
+set_property PACKAGE_PIN M3 [get_ports {ddr3_dm[1]}]
+
+# PadFunction: IO_L12P_T1_MRCC_35 (SCHEMATIC DDR_REF_CLK_P)
+set_property IOSTANDARD LVDS_25 [get_ports sys_clk_p]
+
+# PadFunction: IO_L12N_T1_MRCC_35 (SCHEMATIC DDR_REF_CLK_N)
+set_property IOSTANDARD LVDS_25 [get_ports sys_clk_n]
+set_property PACKAGE_PIN C1 [get_ports sys_clk_p]
+set_property PACKAGE_PIN B1 [get_ports sys_clk_n]
+
+# PadFunction: IO_L21N_T3_DQS_35 (SCHEMATIC SW0)
+set_property IOSTANDARD LVCMOS25 [get_ports sys_rst]
+set_property PACKAGE_PIN G1 [get_ports sys_rst]
+
+# PadFunction: IO_L3P_T0_DQS_34 (SCHEMATIC DDR_LDQS_P)
+set_property SLEW FAST [get_ports {ddr3_dqs_p[0]}]
+set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dqs_p[0]}]
+set_property IOSTANDARD DIFF_SSTL135 [get_ports {ddr3_dqs_p[0]}]
+
+# PadFunction: IO_L3N_T0_DQS_34 (SCHEMATIC DDR_LDQS_N)
+set_property SLEW FAST [get_ports {ddr3_dqs_n[0]}]
+set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dqs_n[0]}]
+set_property IOSTANDARD DIFF_SSTL135 [get_ports {ddr3_dqs_n[0]}]
+set_property PACKAGE_PIN K1 [get_ports {ddr3_dqs_p[0]}]
+set_property PACKAGE_PIN L1 [get_ports {ddr3_dqs_n[0]}]
+
+# PadFunction: IO_L9P_T1_DQS_34 (SCHEMATIC DDR_UDQS_P)
+set_property SLEW FAST [get_ports {ddr3_dqs_p[1]}]
+set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dqs_p[1]}]
+set_property IOSTANDARD DIFF_SSTL135 [get_ports {ddr3_dqs_p[1]}]
+
+# PadFunction: IO_L9N_T1_DQS_34 (SCHEMATIC DDR_UDQS_N)
+set_property SLEW FAST [get_ports {ddr3_dqs_n[1]}]
+set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dqs_n[1]}]
+set_property IOSTANDARD DIFF_SSTL135 [get_ports {ddr3_dqs_n[1]}]
+set_property PACKAGE_PIN N3 [get_ports {ddr3_dqs_p[1]}]
+set_property PACKAGE_PIN N2 [get_ports {ddr3_dqs_n[1]}]
+
+# PadFunction: IO_L21P_T3_DQS_34 (SCHEMATIC DDR_CLK_P)
+set_property SLEW FAST [get_ports {ddr3_ck_p[0]}]
+set_property IOSTANDARD DIFF_SSTL135 [get_ports {ddr3_ck_p[0]}]
+
+# PadFunction: IO_L21N_T3_DQS_34 (SCHEMATIC DDR_CLK_N)
+set_property SLEW FAST [get_ports {ddr3_ck_n[0]}]
+set_property IOSTANDARD DIFF_SSTL135 [get_ports {ddr3_ck_n[0]}]
+set_property PACKAGE_PIN R5 [get_ports {ddr3_ck_p[0]}]
+set_property PACKAGE_PIN T4 [get_ports {ddr3_ck_n[0]}]
+
+set_property INTERNAL_VREF 0.675 [get_iobanks 34]
+set_property CFGBS VCCO
+
+set_property BITSTREAM.CONFIG.UNUSEDPIN PULLUP [current_design]
+set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
+                </textarea>
+            </div>
+        </div>
+    </div>
+
+    <div id="view-repo" class="hidden">
+        <div class="panel">
+            <h3>Workspace Configuration</h3>
+            <div class="form-group">
+                <label for="cfg-base">Project Base URL</label>
+                <input type="text" id="cfg-base" value="https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@main/PRODUCTION_GRADE">
+            </div>
+            <div style="display: flex; gap: 15px; margin-top: 15px;">
+                <div class="form-group" style="flex: 1;"><label>Top:</label><input type="text" id="cfg-top-repo" value="serv_top"></div>
+                <div class="form-group" style="flex: 2;"><label>JSON:</label><input type="text" id="cfg-json" value="serv.json"></div>
+                <div class="form-group" style="flex: 2;"><label>XDC:</label><input type="text" id="cfg-xdc-file" value="serv.xdc"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button id="btn-build" class="action-btn">⚙️ 1. Build Pipeline (P&R)</button>
+        <button id="btn-dl-frames" class="action-btn gray" disabled>💾 Download .frames</button>
+        <button id="btn-dl-bit" class="action-btn gray" disabled>💾 Download .bit</button>
+        <button id="btn-flash" class="action-btn green" disabled>⚡ 2. Flash FPGA</button>
+        <button id="btn-flash-file" class="action-btn gray">⚡ Flash .bit File</button>
+    </div>
+    
+    <pre id="log">System Ready.\n</pre>
 
     <script type="module">
-
         import brotliPromise from 'https://cdn.jsdelivr.net/npm/brotli-dec-wasm@2.3.2/index.js';
 
-
+        let activeMode = 'editor';
+        let pipelineState = { fasmStr: null, framesStr: null, bitstream: null };
+        const ENGINE_ASSETS = { wasm: 'nextpnr-xilinx.opt.wasm', chipdb: 'xc7s50.bin.br', fasmMap: 'xc7s50_fasm_map_v4.json.br', yaml: 'part.yaml', idcode: 0x0362F093 };
 
         const logEl = document.getElementById('log');
-
-        function log(msg, isError = false) {
-
-            if (isError) console.error(msg);
-
-            else console.log(msg);
-
-
-
+        function log(msg, cls = '') {
             const span = document.createElement('span');
-
             span.textContent = msg + '\n';
-
-            if (isError) span.className = 'error';
-
+            if (cls) span.className = cls;
             logEl.appendChild(span);
-
             logEl.scrollTop = logEl.scrollHeight;
-
         }
 
+        // --- DOWNLOAD HELPERS ---
+        function downloadBlob(filename, data, isText = false) {
+            const blob = new Blob([data], { type: isText ? 'text/plain' : 'application/octet-stream' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
 
-
-        let pipelineState = {
-
-            fasmStr: null,
-
-            framesStr: null,
-
-            bitstream: null
-
+        document.getElementById('btn-dl-frames').onclick = () => {
+            if (pipelineState.framesStr) downloadBlob('browser_generated.frames', pipelineState.framesStr, true);
+        };
+        document.getElementById('btn-dl-bit').onclick = () => {
+            if (pipelineState.bitstream) downloadBlob('browser_generated.bit', pipelineState.bitstream, false);
         };
 
-
-
-        async function openDB() {
-
-            return new Promise((resolve, reject) => {
-
-                const req = indexedDB.open('fpga-toolchain', 1);
-
-                req.onupgradeneeded = e => e.target.result.createObjectStore('assets');
-
-                req.onsuccess = e => resolve(e.target.result);
-
-                req.onerror = e => reject(e.target.error);
-
-            });
-
+        // --- TAB MANAGEMENT ---
+        document.getElementById('tab-editor').onclick = () => { activeMode = 'editor'; switchTab(); };
+        document.getElementById('tab-repo').onclick = () => { activeMode = 'repo'; switchTab(); };
+        function switchTab() {
+            document.getElementById('tab-editor').classList.toggle('active', activeMode === 'editor');
+            document.getElementById('tab-repo').classList.toggle('active', activeMode === 'repo');
+            document.getElementById('view-editor').classList.toggle('hidden', activeMode !== 'editor');
+            document.getElementById('view-repo').classList.toggle('hidden', activeMode !== 'repo');
         }
 
-
-
-        async function getAsset(id) {
-
-            const db = await openDB();
-
-            return new Promise(resolve => {
-
-                const req = db.transaction('assets', 'readonly').objectStore('assets').get(id);
-
-                req.onsuccess = () => resolve(req.result);
-
-                req.onerror = () => resolve(null);
-
-            });
-
+        function buildUrl(base, path) {
+            return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
         }
 
-
-
-        async function saveAsset(id, buffer) {
-
-            const db = await openDB();
-
-            return new Promise(resolve => {
-
-                const req = db.transaction('assets', 'readwrite').objectStore('assets').put(buffer, id);
-
-                req.onsuccess = () => resolve();
-
-            });
-
+        async function spawnWorker(scriptUrl) {
+            const res = await fetch(scriptUrl);
+            const code = await res.text();
+            return new Worker(URL.createObjectURL(new Blob([code], { type: 'application/javascript' })));
         }
 
+        function spawnYosysWorker() {
+            const yosysCode = `
+                import { runYosys } from 'https://cdn.jsdelivr.net/npm/@yowasp/yosys/gen/bundle.js';
+                self.onmessage = async (e) => {
+                    const { topModule, verilogCode } = e.data;
+                    try {
+                        // 1. Read Verilog and prep hierarchy
+                        // 2. 'show' command generates the RTL .dot file
+                        // 3. synth_xilinx does the actual compilation
+                        const script = [
+                            'read_verilog -sv input.v',
+                            'hierarchy -top ' + topModule,
+                            'proc; opt; memory; opt', // Clean up the diagram logic
+                            'show -format dot -prefix rtl', // Outputs rtl.dot
+                            'synth_xilinx -flatten -abc9 -arch xc7 -top ' + topModule,
+                            'write_json synth.json'
+                        ].join('; ');
+                        
+                        const out = await runYosys(['-p', script], { 'input.v': verilogCode }, { 
+                            stdout: b => b && self.postMessage({ type: 'log', text: new TextDecoder().decode(b).trimEnd() }), 
+                            stderr: b => b && self.postMessage({ type: 'log', text: '[WARN] ' + new TextDecoder().decode(b).trimEnd() }) 
+                        });
 
+                        // Grab the Synthesis JSON
+                        const jsonBytes = new TextEncoder().encode(out['synth.json']);
+                        
+                        // Grab the RTL Diagram String
+                        const dotStr = out['rtl.dot'] || '';
 
-        async function fetchAndDecompress(url, cacheKey) {
-
-            let data = await getAsset(cacheKey);
-
-            if (data) {
-
-                log(`[IDB] Loaded ${cacheKey} from cache.`);
-
-                return data instanceof ArrayBuffer ? data : data.buffer; 
-
-            }
-
-            log(`[NET] Fetching ${url}...`);
-
-            const res = await fetch(url);
-
-            const compressed = new Uint8Array(await res.arrayBuffer());
-
-            
-
-            log(`[CPU] Decompressing ${url}...`);
-
-            const brotli = await brotliPromise;
-
-            const decompressed = brotli.decompress(compressed);
-
-            
-
-            data = new Uint8Array(decompressed).slice().buffer;
-
-            
-
-            await saveAsset(cacheKey, data);
-
-            return data;
-
-        }
-
-
-
-        document.getElementById('btn-pnr').addEventListener('click', async () => {
-
-            try {
-
-                log("[MAIN] Loading P&R inputs...");
-
-                
-
-                const [chipdbBuffer, wasmRes, jsonRes, xdcRes] = await Promise.all([
-
-                    fetchAndDecompress('xc7s50.bin.br', 'xc7s50-chipdb'),
-
-                    fetch('nextpnr-xilinx.opt.wasm'),
-
-                    fetch('serv.json'),
-
-                    fetch('serv.xdc')
-
-                ]);
-
-
-
-                const wasmBuffer = await wasmRes.arrayBuffer();
-
-                const jsonBuffer = await jsonRes.arrayBuffer();
-
-                const xdcString = await xdcRes.text();
-
-
-
-                log("[MAIN] Spawning P&R Worker...");
-
-                const worker = new Worker('pnr-worker.js');
-
-                
-
-                worker.onmessage = (e) => {
-
-                    const msg = e.data;
-
-                    if (msg.type === 'log') log(`[PNR] ${msg.text}`);
-
-                    else if (msg.type === 'fasm_fixed') {
-
-                        pipelineState.fasmStr = msg.data;
-
-                        log(`[MAIN] FASM complete. Size: ${msg.data.length} bytes.`);
-
-                        document.getElementById('btn-flash').disabled = false;
-
-                    } else if (msg.type === 'error') log(`[FATAL] ${msg.message}`, true);
-
-                    else if (msg.type === 'done') worker.terminate();
-
+                        if (jsonBytes.byteLength === 0) throw new Error("Synthesis yielded zero-byte output.");
+                        
+                        // Send BOTH back to the main thread
+                        self.postMessage({ 
+                            type: 'success', 
+                            jsonBuffer: jsonBytes.buffer,
+                            dotStr: dotStr
+                        }, [jsonBytes.buffer]);
+                        
+                    } catch (err) {
+                        self.postMessage({ type: 'error', message: err.message });
+                    }
                 };
-
-
-
-                worker.postMessage({
-
-                    type: 'run',
-
-                    wasmBuffer, chipdbBuffer, jsonBuffer, xdc: xdcString
-
-                }, [wasmBuffer, chipdbBuffer, jsonBuffer]);
-
-                
-
-            } catch (err) { log(`[MAIN] Exception: ${err.message}`, true); }
-
-        });
-
-
-
-        document.getElementById('btn-flash').addEventListener('click', async () => {
-
+            `;
+            return new Worker(URL.createObjectURL(new Blob([yosysCode], { type: 'application/javascript' })), { type: 'module' });
+        }
+        document.getElementById('btn-build').onclick = async () => {
             try {
-
-                log("[MAIN] Fetching FASM Symmetry Map...");
-
-                const mapRaw = await fetchAndDecompress('xc7s50_fasm_map_v2.json.br', 'fasm-map');
-
-                const mapStr = new TextDecoder().decode(mapRaw);
-
-                const mapData = JSON.parse(mapStr);
-
-
-
-                log("[MAIN] Assembling Frames (fasm2frames Worker)...");
-
-                const fasmWorker = new Worker('fasm2frames.js');
-
+                const baseUrl = new URL('./', import.meta.url).href;
+                document.getElementById('btn-build').disabled = true;
                 
-
-                await new Promise((resolve, reject) => {
-
-                    fasmWorker.onmessage = (e) => {
-
-                        if (e.data.type === 'success') {
-
-                            pipelineState.framesStr = e.data.frames;
-
-                            log(`[MAIN] Frames assembled. Size: ${e.data.frames.length} bytes.`);
-
-                            log(`[MAIN] Telemetry: ${e.data.telemetry}`);
-
-                            resolve();
-
-                        } else if (e.data.type === 'error') {
-
-                            reject(e.data.message);
-
-                        }
-
-                        fasmWorker.terminate();
-
-                    };
-
-                    fasmWorker.postMessage({ fasmStr: pipelineState.fasmStr, mapData });
-
-                });
-
-
-
-                log("[MAIN] Executing xc7frames2bit in Worker...");
-
-                const partRes = await fetch('part.yaml');
-
-                const partYaml = await partRes.text();
-
-
-
-                const framesWorker = new Worker('frames-worker.js');
-
+                // UI FIX: Reset all output buttons to disabled at the start of a build
+                document.getElementById('btn-dl-frames').disabled = true;
+                document.getElementById('btn-dl-bit').disabled = true;
+                document.getElementById('btn-flash').disabled = true;
                 
+                let topModule, xdcString, jsonBuffer;
 
-                await new Promise((resolve, reject) => {
-
-                    framesWorker.onmessage = (e) => {
-
-                        const msg = e.data;
-
-                        if (msg.type === 'log') log(`[FRAMES] ${msg.text}`);
-
-                        else if (msg.type === 'success') {
-
-                            pipelineState.bitstream = msg.bitstream;
-
-                            log(`[MAIN] Bitstream generated: ${pipelineState.bitstream.length} bytes.`);
-
-                            resolve();
-
-                        } else if (msg.type === 'error') {
-
-                            reject(msg.message);
-
-                        }
-
-                    };
-
-                    
-
-                    framesWorker.postMessage({
-
-                        type: 'run',
-
-                        partYaml: partYaml,
-
-                        framesStr: pipelineState.framesStr
-
+                if (activeMode === 'editor') {
+                    topModule = document.getElementById('cfg-top-editor').value.trim();
+                    log(`\n--- SYNTHESIZING: ${topModule} ---`, 'warn');
+                    const synthWorker = spawnYosysWorker();
+                    jsonBuffer = await new Promise((resolve, reject) => {
+                        synthWorker.onmessage = (e) => {
+                            if (e.data.type === 'log') log(e.data.text);
+                            else if (e.data.type === 'success') resolve(e.data.jsonBuffer);
+                            else if (e.data.type === 'error') reject(e.data.message);
+                        };
+                        synthWorker.postMessage({ topModule, verilogCode: document.getElementById('code-verilog').value.trim() });
                     });
-
-                });
-
-
-
-                log("[USB] Requesting FTDI device...");
-
-                const device = await navigator.usb.requestDevice({
-
-                    filters: [{vendorId: 0x0403, productId: 0x6010}]
-
-                });
-
-                const jtag = new WebUSBJtag(device);
-
-                await jtag.init(30000000);
-
-                
-
-                const idcode = await jtag.readIDCODE();
-
-                const expectedId = 0x0362F093;
-
-                
-
-                log(`[USB] IDCODE: 0x${idcode.toString(16).padStart(8, '0').toUpperCase()}`);
-
-                
-
-                // THE GATE: Hard abort on desync
-
-                if (idcode !== expectedId) {
-
-                    throw new Error(`IDCODE Mismatch! Expected 0x0362F093. The JTAG chain is desynchronized.`);
-
+                    synthWorker.terminate();
+                    xdcString = document.getElementById('code-xdc').value.trim();
+                } else {
+                    topModule = document.getElementById('cfg-top-repo').value.trim();
+                    const base = document.getElementById('cfg-base').value.trim();
+                    const [jR, xR] = await Promise.all([
+                        fetch(buildUrl(base, document.getElementById('cfg-json').value.trim())),
+                        fetch(buildUrl(base, document.getElementById('cfg-xdc-file').value.trim()))
+                    ]);
+                    jsonBuffer = await jR.arrayBuffer();
+                    xdcString = await xR.text();
                 }
 
-                
+                if (!jsonBuffer || jsonBuffer.byteLength === 0) {
+                    log(`[WARN] jsonBuffer appears empty — worker may have reported success incorrectly`, 'warn');
+                }
 
-                log("[USB] IDCODE verified. Flashing bitstream...");
+                log(`[MAIN] Netlist ready. Spawning P&R...`, 'warn');
+                const [dbRaw, wasmRes, brotli] = await Promise.all([
+                    fetch(`./${ENGINE_ASSETS.chipdb}`).then(r => r.arrayBuffer()),
+                    fetch(`./${ENGINE_ASSETS.wasm}`).then(r => r.arrayBuffer()),
+                    brotliPromise
+                ]);
+                const dbDecomp = brotli.decompress(new Uint8Array(dbRaw)).buffer;
+
+                const pnrWorker = await spawnWorker('./pnr-worker.js');
+                await new Promise((resolve, reject) => {
+                    pnrWorker.onmessage = (e) => {
+                        if (e.data.type === 'log') log(`[PNR] ${e.data.text}`);
+                        else if (e.data.type === 'fasm_fixed') { pipelineState.fasmStr = e.data.data; resolve(); }
+                        else if (e.data.type === 'error') reject(e.data.message);
+                    };
+                    pnrWorker.postMessage({ baseUrl: new URL('./', import.meta.url).href,
+                        type: 'run', top: topModule, wasmBuffer: wasmRes, chipdbBuffer: dbDecomp, jsonBuffer, xdc: xdcString 
+                    }, [wasmRes, dbDecomp, jsonBuffer]);
+                });
+                pnrWorker.terminate();
+
+                log(`\n--- ASSEMBLING BITSTREAM ---`, 'warn');
+                log(`[DEBUG] fasmStr length: ${pipelineState.fasmStr ? pipelineState.fasmStr.length : 'NULL'}`);
+                
+                const mapRaw = await fetch(`./${ENGINE_ASSETS.fasmMap}`).then(r => r.arrayBuffer());
+                const map = JSON.parse(new TextDecoder().decode(brotli.decompress(new Uint8Array(mapRaw))));
+
+                const fasmWorker = await spawnWorker('./fasm2frames.js');
+                const frames = await new Promise((res, rej) => {
+                    fasmWorker.onmessage = e => {
+                        if (e.data.type === 'success') {
+                            log(`[F2F] ${e.data.telemetry}`);
+                            log(`[F2F] frames length: ${e.data.frames.length}`);
+                            res(e.data.frames);
+                        } else rej(e.data.message);
+                    };
+                    fasmWorker.postMessage({ fasmStr: pipelineState.fasmStr, mapData: map });
+                });
+                
+                log(`[F2F] frames sample:\n${frames.substring(0, 200)}...`);
+                fasmWorker.terminate();
+                pipelineState.framesStr = frames;
+
+                const partYaml = await fetch(baseUrl + ENGINE_ASSETS.yaml).then(r => r.text());
+                const framesWasm = await fetch(baseUrl + 'xc7frames2bit.wasm').then(r => r.arrayBuffer());
+                const framesWorker = await spawnWorker(baseUrl + 'frames-worker.js');
+
+                const bitstream = await new Promise((res, rej) => {
+                    framesWorker.onmessage = e => {
+                        if (e.data.type === 'success') res(e.data.bitstream);
+                        else if (e.data.type === 'error') rej(e.data.message);
+                    };
+                    framesWorker.postMessage(
+                        { type: 'run', baseUrl: baseUrl, partYaml: partYaml, framesStr: frames, wasmBuffer: framesWasm },
+                        [framesWasm]
+                    );
+                });
+                framesWorker.terminate();
+                pipelineState.bitstream = bitstream;
+
+                log(`[DEBUG] Bitstream size: ${bitstream.length} bytes`);
+                log(`✅ BUILD SUCCESSFUL. Ready to Flash.`, 'warn');
+                
+                // UI FIX: Enable all output buttons on success
+                document.getElementById('btn-dl-frames').disabled = false;
+                document.getElementById('btn-dl-bit').disabled = false;
+                document.getElementById('btn-flash').disabled = false;
+
+            } catch (err) { log(`[BUILD FATAL] ${err}`, 'error'); }
+            finally { document.getElementById('btn-build').disabled = false; }
+        };
+
+        document.getElementById('btn-flash').onclick = async () => {
+            try {
+                document.getElementById('btn-flash').disabled = true;
+                log(`\n--- FLASHING HARDWARE ---`, 'warn');
+
+                const device = await navigator.usb.requestDevice({ filters: [{vendorId: 0x0403, productId: 0x6010}] });
+                const jtag = new WebUSBJtag(device);
+                await jtag.init(30000000);
+                
+                const idcode = await jtag.readIDCODE();
+                log(`[USB] IDCODE: 0x${idcode.toString(16).toUpperCase()}`);
+                if (idcode !== ENGINE_ASSETS.idcode) {
+                    log(`[WARN] Silicon mismatch! Expected 0x${ENGINE_ASSETS.idcode.toString(16).toUpperCase()}`);
+                }
 
                 await jtag.programXC7(pipelineState.bitstream);
+                log("⚡ HARDWARE FLASHED SUCCESSFULLY!", 'warn');
+            } catch(err) { log(`[FLASH FATAL] ${err}`, 'error'); }
+            finally { document.getElementById('btn-flash').disabled = false; }
+        };
 
-                log("[USB] Done! Check DONE LED.");
-
-            } catch(err) { log(`[FLASH ERROR] ${err}`, true); }
-
-        });
-
+        document.getElementById('btn-flash-file').onclick = async () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.bit';
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const bitstream = new Uint8Array(await file.arrayBuffer());
+                try {
+                    log(`\n--- FLASHING ${file.name} ---`, 'warn');
+                    const device = await navigator.usb.requestDevice({ filters: [{vendorId: 0x0403, productId: 0x6010}] });
+                    const jtag = new WebUSBJtag(device);
+                    await jtag.init(30000000);
+                    await jtag.programXC7(bitstream);
+                    log("⚡ HARDWARE FLASHED SUCCESSFULLY!", 'warn');
+                } catch(err) { log(`[FLASH FATAL] ${err}`, 'error'); }
+            };
+            input.click();
+        };
     </script>
-
 </body>
-
 </html>

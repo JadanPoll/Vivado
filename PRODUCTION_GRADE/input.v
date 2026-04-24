@@ -1,29 +1,11 @@
-module zero_soc (
-    input clk,
-    output [15:0] led
-);
-    // 1. Physical Heartbeat (Blinky)
-    reg [26:0] counter;
-    always @(posedge clk) counter <= counter + 1;
-    assign led[0] = counter[26]; // Toggles roughly every 0.6 seconds
-    assign led[15:1] = 14'h0;
-
-    // 2. The JTAG Loopback Probe
-    // Connects internal logic to JTAG USER1 register (Chain 1)
-    wire drck, sel, shift, tdi, tdo;
-    BSCANE2 #(.JTAG_CHAIN(1)) bscan_inst (
-        .DRCK(drck),   // Gated TCK for Chain 1
-        .SEL(sel),     // High when USER1 is active
-        .SHIFT(shift), // High during Shift-DR state
-        .TDI(tdi),     // Serial input from external JTAG
-        .TDO(tdo),     // Serial output to external JTAG
-        .CAPTURE(), .RESET(), .UPDATE(), .TMS()
-    );
-
-    // Shift register to hold and move the magic number
-    reg [31:0] test_reg = 32'hDEADBEEF;
-    always @(posedge drck) begin
-        if (sel && shift) test_reg <= {tdi, test_reg[31:1]};
-    end
-    assign tdo = test_reg[0];
+module zero_soc(
+  input clk, rst_n, timer_irq,
+  output [31:0] ibus_adr, output ibus_cyc, input [31:0] ibus_rdt, input ibus_ack,
+  output [31:0] dbus_adr, output [31:0] dbus_dat, output [3:0] dbus_sel,
+  output dbus_we, output dbus_cyc, input [31:0] dbus_rdt, input dbus_ack);
+  serv_rf_top cpu(
+    .clk(clk),.i_rst(~rst_n),.i_timer_irq(timer_irq),
+    .o_ibus_adr(ibus_adr),.o_ibus_cyc(ibus_cyc),.i_ibus_rdt(ibus_rdt),.i_ibus_ack(ibus_ack),
+    .o_dbus_adr(dbus_adr),.o_dbus_dat(dbus_dat),.o_dbus_sel(dbus_sel),
+    .o_dbus_we(dbus_we),.o_dbus_cyc(dbus_cyc),.i_dbus_rdt(dbus_rdt),.i_dbus_ack(dbus_ack));
 endmodule

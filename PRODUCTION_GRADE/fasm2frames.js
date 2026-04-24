@@ -1,8 +1,22 @@
+// XC7S50CSGA324-1 calculates correct frame address space - 4970 addresses
+// Source: prjxray fasm2frames native output studies
 self.onmessage = async function(e) {
     const { fasmStr, mapData } = e.data;
     try {
         const frameData = new Map();
         const { types: typesMap, grid: gridMap } = mapData;
+        
+        // Derive complete address space from map grid — portable to any XC7 device
+        const allAddresses = new Set();
+        for (const [tileName, [bases, tileType]] of Object.entries(gridMap)) {
+            for (const [blockName, [baseAddr, offset, frames]] of Object.entries(bases)) {
+                for (let f = 0; f < frames; f++) {
+                    allAddresses.add(baseAddr + f);
+                }
+            }
+        }
+        const sortedAddresses = Array.from(allAddresses).sort((a, b) => a - b);
+
         const lines = fasmStr.split('\n');
         let parsedCount = 0, unmappedCount = 0, unmappedSample = "";
 
@@ -93,35 +107,35 @@ self.onmessage = async function(e) {
                 // Apply the bit to the frame map
                 const coordList = Array.isArray(coords[0]) ? coords : [coords];
                 for (const [blockName, wordCol, wordIdx, bitIdx] of coordList) {
-                    const baseAddr = bases[blockName];
-                    if (baseAddr === undefined) continue;
+                    const blockInfo = bases[blockName];
+                    if (blockInfo === undefined) continue;
+                    
+                    const [baseAddr, tileOffset, frames] = blockInfo;
                     const frameAddr = baseAddr + wordCol;
+                    const absoluteWordIdx = tileOffset + wordIdx;
+                    
                     let words = frameData.get(frameAddr);
-                    if (!words) {
-                        words = new Uint32Array(101);
-                        frameData.set(frameAddr, words);
-                    }
-                    words[wordIdx] |= (1 << bitIdx);
+                    if (!words) { words = new Uint32Array(101); frameData.set(frameAddr, words); }
+                    words[absoluteWordIdx] |= (1 << bitIdx);
                 }
             }
         }
 
         // Generate output in PrjXray .frames format
         let outputStr = "";
-        const sortedAddresses = Array.from(frameData.keys()).sort((a, b) => a - b);
         for (const addr of sortedAddresses) {
-            let line = "0x" + addr.toString(16).padStart(8, '0');
-            const words = frameData.get(addr);
+            const words = frameData.get(addr) || new Uint32Array(101);
+            const wordStrs = [];
             for (let i = 0; i < 101; i++) {
-                line += " " + (words[i] >>> 0).toString(16).padStart(8, '0');
+                wordStrs.push('0x' + (words[i] >>> 0).toString(16).padStart(8, '0').toUpperCase());
             }
-            outputStr += line + "\n";
+            outputStr += '0x' + addr.toString(16).padStart(8, '0') + ' ' + wordStrs.join(',') + '\n';
         }
-
+        
         self.postMessage({ 
             type: 'success', 
-            frames: outputStr, 
-            telemetry: `Parsed ${parsedCount}. Unmapped: ${unmappedCount} (Sample: ${unmappedSample})` 
+            frames: outputStr,
+            telemetry: `Parsed ${parsedCount}, Unmapped ${unmappedCount}, Dense frames: ${sortedAddresses.length}`
         });
 
     } catch (err) { 

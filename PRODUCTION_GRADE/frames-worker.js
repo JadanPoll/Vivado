@@ -9,6 +9,7 @@ self.onmessage = function(event) {
 function runFrames2Bit(msg) {
     self.Module = {
         noInitialRun: false,
+        wasmBinary: msg.wasmBuffer,  // ADD THIS
         arguments: ['--part_file', '/part.yaml', '--frm_file', '/design.frames', '--output_file', '/design.bit'],
         preRun: function() {
             self.FS.writeFile('/part.yaml', new TextEncoder().encode(msg.partYaml));
@@ -38,6 +39,6 @@ function runFrames2Bit(msg) {
             self.postMessage({ type: 'error', message: "Failed to read design.bit: " + err.toString() });
         }
     }
-
-    importScripts('xc7frames2bit.js');
+    importScripts(msg.baseUrl + 'xc7frames2bit.js');
+    
 }
