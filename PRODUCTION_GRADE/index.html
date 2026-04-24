@@ -15,33 +15,42 @@
         .panel h3 { margin-top: 0; color: #9cdcfe; font-size: 1.1rem; border-bottom: 1px solid #2a3050; padding-bottom: 8px; }
         .form-group { margin-bottom: 12px; display: flex; align-items: center; }
         .form-group label { width: 140px; font-size: 0.9rem; color: #b0b8c8; font-weight: bold; }
-        .form-group input { flex: 1; padding: 8px; background: #0d0f1a; border: 1px solid #333; color: #fff; border-radius: 4px; font-family: monospace; font-size: 0.9rem; }
+        .form-group input, .form-group select { flex: 1; padding: 8px; background: #0d0f1a; border: 1px solid #333; color: #fff; border-radius: 4px; font-family: monospace; font-size: 0.9rem; }
         .editor-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         textarea { width: 100%; height: 280px; font-family: monospace; font-size: 0.85rem; background: #000; color: #ce9178; border: 1px solid #3a2a1a; border-radius: 6px; padding: 12px; resize: vertical; line-height: 1.45; box-sizing: border-box; }
         .hidden { display: none !important; }
         
-        .controls { display: flex; gap: 10px; margin-bottom: 15px; margin-top: 15px; flex-wrap: wrap; }
+        .controls { display: flex; gap: 10px; margin-bottom: 15px; margin-top: 15px; flex-wrap: wrap; align-items: center; }
         button.action-btn { background: #007acc; color: white; border: none; padding: 12px 24px; cursor: pointer; font-weight: bold; border-radius: 4px; transition: background 0.2s; font-size: 1rem; }
         button.action-btn:disabled { background: #333; color: #666; cursor: not-allowed; }
         button.action-btn:hover:not(:disabled) { background: #005f9e; }
         button.action-btn.green { background: #2e7d32; }
         button.action-btn.gray { background: #455a64; }
         button.action-btn.gray:hover:not(:disabled) { background: #607d8b; }
+        button.action-btn.blue { background: #004ba0; }
+        button.action-btn.blue:hover:not(:disabled) { background: #0063cc; }
         
-        #log { background: #0d0f1a; padding: 15px; height: 350px; overflow-y: auto; font-family: monospace; font-size: 13px; color: #4af626; border: 1px solid #2a3050; border-radius: 6px; white-space: pre-wrap; line-height: 1.4; }
-        .error { color: #f97171; font-weight: bold; }
-        .warn { color: #ffd43b; }
+        #log { background: #0d0f1a; padding: 15px; height: 250px; overflow-y: auto; font-family: monospace; font-size: 13px; color: #4af626; border: 1px solid #2a3050; border-radius: 6px; white-space: pre-wrap; line-height: 1.4; }
+        
+        /* Flex utility for headers */
+        .panel-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2a3050; padding-bottom: 8px; margin-bottom: 10px; }
+        .panel-header h3 { border: none; padding: 0; margin: 0; }
+        
+        /* Terminal styles */
+        #serial-out { height: 180px; background: #000; color: #0f0; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 0.85rem; margin-bottom: 5px; border-radius: 4px; border: 1px solid #333; white-space: pre-wrap; }
+        #serial-in { width: 100%; box-sizing: border-box; background: #000; color: #fff; border: 1px solid #333; padding: 10px; border-radius: 4px; font-family: monospace; }
+        #hw-status { font-size: 0.9rem; font-weight: bold; padding: 5px 10px; border-radius: 4px; background: #333; }
     </style>
     <script src="ftdi-jtag.js"></script>
 </head>
 <body>
 
     <h2>⚡ ZeroLabs Web IDE</h2>
-    <div class="subtitle">Diagnostic Build: Inspecting VFS Buffer Handshake</div>
+    <div class="subtitle">Diagnostic Build: Full Pipeline + Universal Console</div>
     
     <div class="tabs">
         <button id="tab-editor" class="tab active">Live Editor (Auto-Synthesis)</button>
-        <button id="tab-repo" class="tab">GitHub / Remote Repo</button>
+        <button id="tab-repo" class="tab">Remote Workspace</button>
     </div>
 
     <div id="view-editor">
@@ -59,7 +68,6 @@ module top (
     input  logic        clk,
     output logic [15:0] LED
 );
-    // Sequential logic to increment the counter
     logic [15:0] divider;
     always_ff @(posedge clk) begin
        divider <= divider + 1;
@@ -73,472 +81,13 @@ endmodule
             <div class="panel">
                 <h3>Urbana Constraints (.xdc)</h3>
                 <textarea id="code-xdc" spellcheck="false" style="color: #9cdcfe;">
-# URBANA BOARD CONSTRAINTS V2I1 1/3/2023 
-# clk input is from the 100 MHz oscillator on Urbana board
-#create_clock -period 10.000 -name gclk [get_ports clk]
+# URBANA BOARD CONSTRAINTS
 set_property -dict {PACKAGE_PIN N15 IOSTANDARD LVCMOS33} [get_ports {clk}]
-
-# Set Bank 0 voltage
 set_property CFGBVS VCCO [current_design]
 set_property CONFIG_VOLTAGE 3.3 [current_design]
 set_property BITSTREAM.Config.SPI_buswidth 4 [current_design]
-
-# On-board Slide Switches
-set_property -dict {PACKAGE_PIN G1 IOSTANDARD LVCMOS25} [get_ports {SW[0]}]
-set_property -dict {PACKAGE_PIN F2 IOSTANDARD LVCMOS25} [get_ports {SW[1]}]
-set_property -dict {PACKAGE_PIN F1 IOSTANDARD LVCMOS25} [get_ports {SW[2]}]
-set_property -dict {PACKAGE_PIN E2 IOSTANDARD LVCMOS25} [get_ports {SW[3]}]
-set_property -dict {PACKAGE_PIN E1 IOSTANDARD LVCMOS25} [get_ports {SW[4]}]
-set_property -dict {PACKAGE_PIN D2 IOSTANDARD LVCMOS25} [get_ports {SW[5]}]
-set_property -dict {PACKAGE_PIN D1 IOSTANDARD LVCMOS25} [get_ports {SW[6]}]
-set_property -dict {PACKAGE_PIN C2 IOSTANDARD LVCMOS25} [get_ports {SW[7]}]
-set_property -dict {PACKAGE_PIN B2 IOSTANDARD LVCMOS25} [get_ports {SW[8]}]
-set_property -dict {PACKAGE_PIN A4 IOSTANDARD LVCMOS25} [get_ports {SW[9]}]
-set_property -dict {PACKAGE_PIN A5 IOSTANDARD LVCMOS25} [get_ports {SW[10]}]
-set_property -dict {PACKAGE_PIN A6 IOSTANDARD LVCMOS25} [get_ports {SW[11]}]
-set_property -dict {PACKAGE_PIN C7 IOSTANDARD LVCMOS25} [get_ports {SW[12]}]
-set_property -dict {PACKAGE_PIN A7 IOSTANDARD LVCMOS25} [get_ports {SW[13]}]
-set_property -dict {PACKAGE_PIN B7 IOSTANDARD LVCMOS25} [get_ports {SW[14]}]
-set_property -dict {PACKAGE_PIN A8 IOSTANDARD LVCMOS25} [get_ports {SW[15]}]
-
-# On-board LEDs
 set_property -dict {PACKAGE_PIN C13 IOSTANDARD LVCMOS33} [get_ports {LED[0]}]
-set_property -dict {PACKAGE_PIN C14 IOSTANDARD LVCMOS33} [get_ports {LED[1]}]
-set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
-set_property -dict {PACKAGE_PIN D15 IOSTANDARD LVCMOS33} [get_ports {LED[3]}]
-set_property -dict {PACKAGE_PIN D16 IOSTANDARD LVCMOS33} [get_ports {LED[4]}]
-set_property -dict {PACKAGE_PIN F18 IOSTANDARD LVCMOS33} [get_ports {LED[5]}]
-set_property -dict {PACKAGE_PIN E17 IOSTANDARD LVCMOS33} [get_ports {LED[6]}]
-set_property -dict {PACKAGE_PIN D17 IOSTANDARD LVCMOS33} [get_ports {LED[7]}]
-set_property -dict {PACKAGE_PIN C17 IOSTANDARD LVCMOS33} [get_ports {LED[8]}]
-set_property -dict {PACKAGE_PIN B18 IOSTANDARD LVCMOS33} [get_ports {LED[9]}]
-set_property -dict {PACKAGE_PIN A17 IOSTANDARD LVCMOS33} [get_ports {LED[10]}]
-set_property -dict {PACKAGE_PIN B17 IOSTANDARD LVCMOS33} [get_ports {LED[11]}]
-set_property -dict {PACKAGE_PIN C18 IOSTANDARD LVCMOS33} [get_ports {LED[12]}]
-set_property -dict {PACKAGE_PIN D18 IOSTANDARD LVCMOS33} [get_ports {LED[13]}]
-set_property -dict {PACKAGE_PIN E18 IOSTANDARD LVCMOS33} [get_ports {LED[14]}]
-set_property -dict {PACKAGE_PIN G17 IOSTANDARD LVCMOS33} [get_ports {LED[15]}]
-
-# On-board Buttons
-set_property -dict {PACKAGE_PIN J2 IOSTANDARD LVCMOS25} [get_ports {BTN[0]}]
-set_property -dict {PACKAGE_PIN J1 IOSTANDARD LVCMOS25} [get_ports {BTN[1]}]
-set_property -dict {PACKAGE_PIN G2 IOSTANDARD LVCMOS25} [get_ports {BTN[2]}]
-set_property -dict {PACKAGE_PIN H2 IOSTANDARD LVCMOS25} [get_ports {BTN[3]}]
-
-# On-board color LEDs
-set_property -dict {PACKAGE_PIN C9 IOSTANDARD LVCMOS33} [get_ports {RGB0[0]}];   # RBG0_R
-set_property -dict {PACKAGE_PIN A9 IOSTANDARD LVCMOS33} [get_ports {RGB0[1]}];   # RBG0_G
-set_property -dict {PACKAGE_PIN A10 IOSTANDARD LVCMOS33} [get_ports {RGB0[2]}];   # RBG0_B
-set_property -dict {PACKAGE_PIN A11 IOSTANDARD LVCMOS33} [get_ports {RGB1[0]}];   # RBG1_R
-set_property -dict {PACKAGE_PIN C10 IOSTANDARD LVCMOS33} [get_ports {RGB1[1]}];   # RBG1_G
-set_property -dict {PACKAGE_PIN B11 IOSTANDARD LVCMOS33} [get_ports {RGB1[2]}];   # RBG1_B
-
-# On-board 7-Segment display 0
-set_property -dict {PACKAGE_PIN G6 IOSTANDARD LVCMOS25} [get_ports {D0_AN[0]}]  # Active LOW
-set_property -dict {PACKAGE_PIN H6 IOSTANDARD LVCMOS25} [get_ports {D0_AN[1]}]  # Active LOW
-set_property -dict {PACKAGE_PIN C3 IOSTANDARD LVCMOS25} [get_ports {D0_AN[2]}]  # Active LOW
-set_property -dict {PACKAGE_PIN B3 IOSTANDARD LVCMOS25} [get_ports {D0_AN[3]}]  # Active LOW
-set_property -dict {PACKAGE_PIN E6 IOSTANDARD LVCMOS25} [get_ports {D0_SEG[0]}];  # CA Active LOW
-set_property -dict {PACKAGE_PIN B4 IOSTANDARD LVCMOS25} [get_ports {D0_SEG[1]}];  # CB Active LOW
-set_property -dict {PACKAGE_PIN D5 IOSTANDARD LVCMOS25} [get_ports {D0_SEG[2]}];  # CC Active LOW
-set_property -dict {PACKAGE_PIN C5 IOSTANDARD LVCMOS25} [get_ports {D0_SEG[3]}];  # CD Active LOW
-set_property -dict {PACKAGE_PIN D7 IOSTANDARD LVCMOS25} [get_ports {D0_SEG[4]}];  # CE Active LOW
-set_property -dict {PACKAGE_PIN D6 IOSTANDARD LVCMOS25} [get_ports {D0_SEG[5]}];  # CF Active LOW
-set_property -dict {PACKAGE_PIN C4 IOSTANDARD LVCMOS25} [get_ports {D0_SEG[6]}];  # CG Active LOW
-set_property -dict {PACKAGE_PIN B5 IOSTANDARD LVCMOS25} [get_ports {D0_SEG[7]}];  # CDP Active LOW
-
-# On-board 7-Segment display 1
-set_property -dict {PACKAGE_PIN E4 IOSTANDARD LVCMOS25} [get_ports {D1_AN[0]}]  # Active LOW
-set_property -dict {PACKAGE_PIN E3 IOSTANDARD LVCMOS25} [get_ports {D1_AN[1]}]  # Active LOW
-set_property -dict {PACKAGE_PIN F5 IOSTANDARD LVCMOS25} [get_ports {D1_AN[2]}]  # Active LOW
-set_property -dict {PACKAGE_PIN H5 IOSTANDARD LVCMOS25} [get_ports {D1_AN[3]}]  # Active LOW
-set_property -dict {PACKAGE_PIN F3 IOSTANDARD LVCMOS25} [get_ports {D1_SEG[0]}];  # CA Active LOW
-set_property -dict {PACKAGE_PIN G5 IOSTANDARD LVCMOS25} [get_ports {D1_SEG[1]}];  # CB Active LOW
-set_property -dict {PACKAGE_PIN J3 IOSTANDARD LVCMOS25} [get_ports {D1_SEG[2]}];  # CC Active LOW
-set_property -dict {PACKAGE_PIN H4 IOSTANDARD LVCMOS25} [get_ports {D1_SEG[3]}];  # CD Active LOW
-set_property -dict {PACKAGE_PIN F4 IOSTANDARD LVCMOS25} [get_ports {D1_SEG[4]}];  # CE Active LOW
-set_property -dict {PACKAGE_PIN H3 IOSTANDARD LVCMOS25} [get_ports {D1_SEG[5]}];  # CF Active LOW
-set_property -dict {PACKAGE_PIN E5 IOSTANDARD LVCMOS25} [get_ports {D1_SEG[6]}];  # CG Active LOW
-set_property -dict {PACKAGE_PIN J4 IOSTANDARD LVCMOS25} [get_ports {D1_SEG[7]}];  # CDP Active LOW
-
-#HDMI Signals
-set_property -dict {PACKAGE_PIN U17 IOSTANDARD TDMS_33} [get_ports {HDMI_DO_P}]
-set_property -dict {PACKAGE_PIN U18 IOSTANDARD TDMS_33} [get_ports {HDMI_D0_N}]
-set_property -dict {PACKAGE_PIN R16 IOSTANDARD TDMS_33} [get_ports {HDMI_D1_P}]
-set_property -dict {PACKAGE_PIN R17 IOSTANDARD TDMS_33} [get_ports {HDMI_D1_N}]
-set_property -dict {PACKAGE_PIN R14 IOSTANDARD TDMS_33} [get_ports {HDMI_D2_P}]
-set_property -dict {PACKAGE_PIN T14 IOSTANDARD TDMS_33} [get_ports {HDMI_D2_N}]
-set_property -dict {PACKAGE_PIN U16 IOSTANDARD TDMS_33} [get_ports {HDMI_CLK_P}]
-set_property -dict {PACKAGE_PIN V17 IOSTANDARD TDMS_33} [get_ports {HDMI_CLK_N}]
-set_property -dict {PACKAGE_PIN R15 IOSTANDARD LVCMOS33} [get_ports {HDMI_CEC_IN}]
-set_property -dict {PACKAGE_PIN T15 IOSTANDARD LVCMOS33} [get_ports {HDMI_HPD}]
-set_property -dict {PACKAGE_PIN U15 IOSTANDARD LVCMOS33} [get_ports {HDMI_I2C_SCL}]
-set_property -dict {PACKAGE_PIN V16 IOSTANDARD LVCMOS33} [get_ports {HDMI_I2C-SDA}]
-
-# USB host signals
-set_property -dict {PACKAGE_PIN U12 IOSTANDARD LVCMOS33} [get_ports {USB_SPI_MISO}]
-set_property -dict {PACKAGE_PIN V15 IOSTANDARD LVCMOS33} [get_ports {USB_SPI_MOSI}]
-set_property -dict {PACKAGE_PIN V14 IOSTANDARD LVCMOS33} [get_ports {USB_SPI_CCLK}]
-set_property -dict {PACKAGE_PIN T12 IOSTANDARD LVCMOS33} [get_ports {USB_SS_B}]
-set_property -dict {PACKAGE_PIN V13 IOSTANDARD LVCMOS33} [get_ports {USB_RESET_B}]
-set_property -dict {PACKAGE_PIN T13 IOSTANDARD LVCMOS33} [get_ports {USB_INT}]
-
-# SD socket signals
-set_property -dict {PACKAGE_PIN M16 IOSTANDARD LVCMOS33} [get_ports {SD_DQ0}]
-set_property -dict {PACKAGE_PIN M17 IOSTANDARD LVCMOS33} [get_ports {SD_DQ1}]
-set_property -dict {PACKAGE_PIN M18 IOSTANDARD LVCMOS33} [get_ports {SD_DQ2}]
-set_property -dict {PACKAGE_PIN N18 IOSTANDARD LVCMOS33} [get_ports {SD_DQ3}]
-set_property -dict {PACKAGE_PIN P17 IOSTANDARD LVCMOS33} [get_ports {SD_CMD}]
-set_property -dict {PACKAGE_PIN P18 IOSTANDARD LVCMOS33} [get_ports {SD_CLK}]
-set_property -dict {PACKAGE_PIN R18 IOSTANDARD LVCMOS33} [get_ports {SD_CD_N}]
-
-# PWM audio out signals
-set_property -dict {PACKAGE_PIN B13 IOSTANDARD LVCMOS33} [get_ports {SPKL}]
-set_property -dict {PACKAGE_PIN B14 IOSTANDARD LVCMOS33} [get_ports {SPKR}]
-
-# PWM Microphone signals
-set_property -dict {PACKAGE_PIN E12 IOSTANDARD LVCMOS33} [get_ports {MIC_CLK}]
-set_property -dict {PACKAGE_PIN D12 IOSTANDARD LVCMOS33} [get_ports {MIC_DATA}]
-
-# Analog/Joysitck inputs
-set_property -dict {PACKAGE_PIN B15 IOSTANDARD LVCMOS33} [get_ports {AD1_P}]
-set_property -dict {PACKAGE_PIN A15 IOSTANDARD LVCMOS33} [get_ports {AD1_N}]
-set_property -dict {PACKAGE_PIN A3 IOSTANDARD LVCMOS33} [get_ports {AD15_P}]
-set_property -dict {PACKAGE_PIN A2 IOSTANDARD LVCMOS33} [get_ports {AD15_N}]
-set_property -dict {PACKAGE_PIN F6 IOSTANDARD LVCMOS25} [get_ports {SEL_JOYSTICK}]
-
-# UART signals
-set_property -dict {PACKAGE_PIN G15 IOSTANDARD LVCMOS33} [get_ports {BLE_UART_TXD}]
-set_property -dict {PACKAGE_PIN E13 IOSTANDARD LVCMOS33} [get_ports {BLE_UART_RXD}]
-set_property -dict {PACKAGE_PIN H15 IOSTANDARD LVCMOS33} [get_ports {BLE_UART_RTS}]
-set_property -dict {PACKAGE_PIN F13 IOSTANDARD LVCMOS33} [get_ports {BLE_UART_CTS}]
-set_property -dict {PACKAGE_PIN B16 IOSTANDARD LVCMOS33} [get_ports {UART_TXD}]
-set_property -dict {PACKAGE_PIN A16 IOSTANDARD LVCMOS33} [get_ports {UART_RXD}]
-
-#QSPI signals
-set_property -dict {PACKAGE_PIN K17 IOSTANDARD LVCMOS33} [get_ports {QSPI_DQ0}]
-set_property -dict {PACKAGE_PIN K18 IOSTANDARD LVCMOS33} [get_ports {QSPI_DQ1}]
-set_property -dict {PACKAGE_PIN L14 IOSTANDARD LVCMOS33} [get_ports {QSPI_DQ2}]
-set_property -dict {PACKAGE_PIN M15 IOSTANDARD LVCMOS33} [get_ports {QSPI_DQ3}]
-set_property -dict {PACKAGE_PIN M13 IOSTANDARD LVCMOS33} [get_ports {QSPI_CS_B}]
-set_property -dict {PACKAGE_PIN N13 IOSTANDARD LVCMOS33} [get_ports {QSPI_RESET_B}]
-
-# Servomotor signals
-set_property -dict {PACKAGE_PIN L18 IOSTANDARD LVCMOS33} [get_ports {SERVO0}]
-set_property -dict {PACKAGE_PIN L17 IOSTANDARD LVCMOS33} [get_ports {SERVO1}]
-set_property -dict {PACKAGE_PIN N14 IOSTANDARD LVCMOS33} [get_ports {SERVO2}]
-set_property -dict {PACKAGE_PIN M14 IOSTANDARD LVCMOS33} [get_ports {SERVO3}]
-
-# PMOD A Signals
-set_property -dict {PACKAGE_PIN F14 IOSTANDARD LVCMOS33} [get_ports {JA1_P}]
-set_property -dict {PACKAGE_PIN F15 IOSTANDARD LVCMOS33} [get_ports {JA1_N}]
-set_property -dict {PACKAGE_PIN H13 IOSTANDARD LVCMOS33} [get_ports {JA2_P}]
-set_property -dict {PACKAGE_PIN H14 IOSTANDARD LVCMOS33} [get_ports {JA2_N}]
-set_property -dict {PACKAGE_PIN J13 IOSTANDARD LVCMOS33} [get_ports {JA3_P}]
-set_property -dict {PACKAGE_PIN J14 IOSTANDARD LVCMOS33} [get_ports {JA3_N}]
-set_property -dict {PACKAGE_PIN E14 IOSTANDARD LVCMOS33} [get_ports {JA4_P}]
-set_property -dict {PACKAGE_PIN E15 IOSTANDARD LVCMOS33} [get_ports {JA4_N}]
-
-# PMOD B Signals
-set_property -dict {PACKAGE_PIN H18 IOSTANDARD LVCMOS33} [get_ports {JB1_P}]
-set_property -dict {PACKAGE_PIN G18 IOSTANDARD LVCMOS33} [get_ports {JB1_N}]
-set_property -dict {PACKAGE_PIN H13 IOSTANDARD LVCMOS33} [get_ports {JB2_P}]
-set_property -dict {PACKAGE_PIN H14 IOSTANDARD LVCMOS33} [get_ports {JB2_N}]
-set_property -dict {PACKAGE_PIN H16 IOSTANDARD LVCMOS33} [get_ports {JB3_P}]
-set_property -dict {PACKAGE_PIN H17 IOSTANDARD LVCMOS33} [get_ports {JB3_N}]
-set_property -dict {PACKAGE_PIN K16 IOSTANDARD LVCMOS33} [get_ports {JB4_P}]
-set_property -dict {PACKAGE_PIN J16 IOSTANDARD LVCMOS33} [get_ports {JB4_N}]
-
-# PMOD AB Signals
-set_property -dict {PACKAGE_PIN D11 IOSTANDARD LVCMOS33} [get_ports {JAB_0}]
-set_property -dict {PACKAGE_PIN C12 IOSTANDARD LVCMOS33} [get_ports {JAB_1}]
-set_property -dict {PACKAGE_PIN E16 IOSTANDARD LVCMOS33} [get_ports {JAB_2}]
-set_property -dict {PACKAGE_PIN G16 IOSTANDARD LVCMOS33} [get_ports {JAB_3}]
-set_property -dict {PACKAGE_PIN C11 IOSTANDARD LVCMOS33} [get_ports {JAB_4}]
-set_property -dict {PACKAGE_PIN D10 IOSTANDARD LVCMOS33} [get_ports {JAB_5}]
-
-# DDR3 signals
-set_property IO_BUFFER_TYPE NONE [get_ports {ddr3_ck_n[0]}]
-set_property IO_BUFFER_TYPE NONE [get_ports {ddr3_ck_p[0]}]
-
-# PadFunction: IO_L1N_T0_34 (SCHEMATIC DDR_DQ0)
-current_instance -quiet
-set_property SLEW FAST [get_ports {ddr3_dq[0]}]
-set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[0]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[0]}]
-set_property PACKAGE_PIN K2 [get_ports {ddr3_dq[0]}]
-
-# PadFunction: IO_L2P_T0_34 (SCHEMATIC DDR_DQ1)
-set_property SLEW FAST [get_ports {ddr3_dq[1]}]
-set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[1]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[1]}]
-set_property PACKAGE_PIN M4 [get_ports {ddr3_dq[1]}]
-
-# PadFunction: IO_L2N_T0_34 (SCHEMATIC DDR_DQ2)
-set_property SLEW FAST [get_ports {ddr3_dq[2]}]
-set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[2]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[2]}]
-set_property PACKAGE_PIN K3 [get_ports {ddr3_dq[2]}]
-
-# PadFunction: IO_L4P_T0_34 (SCHEMATIC DDR_DQ3)
-set_property SLEW FAST [get_ports {ddr3_dq[3]}]
-set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[3]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[3]}]
-set_property PACKAGE_PIN L5 [get_ports {ddr3_dq[3]}]
-
-# PadFunction: IO_L4N_T0_34 (SCHEMATIC DDR_DQ4)
-set_property SLEW FAST [get_ports {ddr3_dq[4]}]
-set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[4]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[4]}]
-set_property PACKAGE_PIN L6 [get_ports {ddr3_dq[4]}]
-
-# PadFunction: IO_L5P_T0_34 (SCHEMATIC DDR_DQ5)
-set_property SLEW FAST [get_ports {ddr3_dq[5]}]
-set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[5]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[5]}]
-set_property PACKAGE_PIN M6 [get_ports {ddr3_dq[5]}]
-
-# PadFunction: IO_L5N_T0_34 (SCHEMATIC DDR_DQ6)
-set_property SLEW FAST [get_ports {ddr3_dq[6]}]
-set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[6]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[6]}]
-set_property PACKAGE_PIN L4 [get_ports {ddr3_dq[6]}]
-
-# PadFunction: IO_L6P_T0_34 (SCHEMATIC DDR_DQ7)
-set_property SLEW FAST [get_ports {ddr3_dq[7]}]
-set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[7]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[7]}]
-set_property PACKAGE_PIN K6 [get_ports {ddr3_dq[7]}]
-
-# PadFunction: IO_L7N_T1_34 (SCHEMATIC DDR_DQ8)
-set_property SLEW FAST [get_ports {ddr3_dq[8]}]
-set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[8]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[8]}]
-set_property PACKAGE_PIN N5 [get_ports {ddr3_dq[8]}]
-
-# PadFunction: IO_L8P_T1_34 (SCHEMATIC DDR_DQ9)
-set_property SLEW FAST [get_ports {ddr3_dq[9]}]
-set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[9]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[9]}]
-set_property PACKAGE_PIN M1 [get_ports {ddr3_dq[9]}]
-
-# PadFunction: IO_L8N_T1_34 (SCHEMATIC DDR_DQ10)
-set_property SLEW FAST [get_ports {ddr3_dq[10]}]
-set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[10]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[10]}]
-set_property PACKAGE_PIN P1 [get_ports {ddr3_dq[10]}]
-
-# PadFunction: IO_L10P_T1_34 (SCHEMATIC DDR_DQ11)
-set_property SLEW FAST [get_ports {ddr3_dq[11]}]
-set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[11]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[11]}]
-set_property PACKAGE_PIN N1 [get_ports {ddr3_dq[11]}]
-
-# PadFunction: IO_L10N_T1_34 (SCHEMATIC DDR_DQ12)
-set_property SLEW FAST [get_ports {ddr3_dq[12]}]
-set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[12]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[12]}]
-set_property PACKAGE_PIN R2 [get_ports {ddr3_dq[12]}]
-
-# PadFunction: IO_L11P_T1_SRCC_34 (SCHEMATIC DDR_DQ13)
-set_property SLEW FAST [get_ports {ddr3_dq[13]}]
-set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[13]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[13]}]
-set_property PACKAGE_PIN N4 [get_ports {ddr3_dq[13]}]
-
-# PadFunction: IO_L11N_T1_SRCC_34 (SCHEMATIC DDR_DQ14)
-set_property SLEW FAST [get_ports {ddr3_dq[14]}]
-set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[14]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[14]}]
-set_property PACKAGE_PIN P2 [get_ports {ddr3_dq[14]}]
-
-# PadFunction: IO_L12P_T1_MRCC_34 (SCHEMATIC DDR_DQ15)
-set_property SLEW FAST [get_ports {ddr3_dq[15]}]
-set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dq[15]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_dq[15]}]
-set_property PACKAGE_PIN M2 [get_ports {ddr3_dq[15]}]
-
-# PadFunction: IO_L13P_T2_MRCC_34 (SCHEMATIC DDR_A14)
-set_property SLEW FAST [get_ports {ddr3_addr[14]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[14]}]
-set_property PACKAGE_PIN R6 [get_ports {ddr3_addr[14]}]
-
-# PadFunction: IO_L13N_T2_MRCC_34 (SCHEMATIC DDR_A13)
-set_property SLEW FAST [get_ports {ddr3_addr[13]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[13]}]
-set_property PACKAGE_PIN V7 [get_ports {ddr3_addr[13]}]
-
-# PadFunction: IO_L14P_T2_SRCC_34 (SCHEMATIC DDR_A12)
-set_property SLEW FAST [get_ports {ddr3_addr[12]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[12]}]
-set_property PACKAGE_PIN V6 [get_ports {ddr3_addr[12]}]
-
-# PadFunction: IO_L14N_T2_SRCC_34 (SCHEMATIC DDR_A11)
-set_property SLEW FAST [get_ports {ddr3_addr[11]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[11]}]
-set_property PACKAGE_PIN P5 [get_ports {ddr3_addr[11]}]
-
-# PadFunction: IO_L15P_T2_DQS_34 (SCHEMATIC DDR_A10)
-set_property SLEW FAST [get_ports {ddr3_addr[10]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[10]}]
-set_property PACKAGE_PIN U3 [get_ports {ddr3_addr[10]}]
-
-# PadFunction: IO_L15N_T2_DQS_34 (SCHEMATIC DDR_A9)
-set_property SLEW FAST [get_ports {ddr3_addr[9]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[9]}]
-set_property PACKAGE_PIN U6 [get_ports {ddr3_addr[9]}]
-
-# PadFunction: IO_L16P_T2_34 (SCHEMATIC DDR_A8)
-set_property SLEW FAST [get_ports {ddr3_addr[8]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[8]}]
-set_property PACKAGE_PIN R7 [get_ports {ddr3_addr[8]}]
-
-# PadFunction: IO_L16N_T2_34 (SCHEMATIC DDR_A7)
-set_property SLEW FAST [get_ports {ddr3_addr[7]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[7]}]
-set_property PACKAGE_PIN U7 [get_ports {ddr3_addr[7]}]
-
-# PadFunction: IO_L17P_T2_34 (SCHEMATIC DDR_A6)
-set_property SLEW FAST [get_ports {ddr3_addr[6]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[6]}]
-set_property PACKAGE_PIN V5 [get_ports {ddr3_addr[6]}]
-
-# PadFunction: IO_L17N_T2_34 (SCHEMATIC DDR_A5)
-set_property SLEW FAST [get_ports {ddr3_addr[5]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[5]}]
-set_property PACKAGE_PIN T1 [get_ports {ddr3_addr[5]}]
-
-# PadFunction: IO_L18P_T2_34 (SCHEMATIC DDR_A4)
-set_property SLEW FAST [get_ports {ddr3_addr[4]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[4]}]
-set_property PACKAGE_PIN T6 [get_ports {ddr3_addr[4]}]
-
-# PadFunction: IO_L18N_T2_34 (SCHEMATIC DDR_A3)
-set_property SLEW FAST [get_ports {ddr3_addr[3]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[3]}]
-set_property PACKAGE_PIN T3 [get_ports {ddr3_addr[3]}]
-
-# PadFunction: IO_L19P_T3_34 (SCHEMATIC DDR_A2)
-set_property SLEW FAST [get_ports {ddr3_addr[2]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[2]}]
-set_property PACKAGE_PIN P6 [get_ports {ddr3_addr[2]}]
-
-# PadFunction: IO_L19N_T3_VREF_34 (SCHEMATIC DDR_A1)
-set_property SLEW FAST [get_ports {ddr3_addr[1]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[1]}]
-set_property PACKAGE_PIN R4 [get_ports {ddr3_addr[1]}]
-
-# PadFunction: IO_L20P_T3_34 (SCHEMATIC DDR_A0)
-set_property SLEW FAST [get_ports {ddr3_addr[0]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_addr[0]}]
-set_property PACKAGE_PIN V3 [get_ports {ddr3_addr[0]}]
-
-# PadFunction: IO_L20N_T3_34 (SCHEMATIC DDR_BA2)
-set_property SLEW FAST [get_ports {ddr3_ba[2]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_ba[2]}]
-set_property PACKAGE_PIN R3 [get_ports {ddr3_ba[2]}]
-
-# PadFunction: IO_L22P_T3_34 (SCHEMATIC DDR_BA1)
-set_property SLEW FAST [get_ports {ddr3_ba[1]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_ba[1]}]
-set_property PACKAGE_PIN V4 [get_ports {ddr3_ba[1]}]
-
-# PadFunction: IO_L22N_T3_34 (SCHEMATIC DDR_BA0)
-set_property SLEW FAST [get_ports {ddr3_ba[0]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_ba[0]}]
-set_property PACKAGE_PIN V2 [get_ports {ddr3_ba[0]}]
-
-# PadFunction: IO_L23P_T3_34 (SCHEMATIC DDR_RAS_B
-set_property SLEW FAST [get_ports ddr3_ras_n]
-set_property IOSTANDARD SSTL135 [get_ports ddr3_ras_n]
-set_property PACKAGE_PIN U2 [get_ports ddr3_ras_n]
-
-# PadFunction: IO_L23N_T3_34 (SCHEMATIC DDR_CAS_B)
-set_property SLEW FAST [get_ports ddr3_cas_n]
-set_property IOSTANDARD SSTL135 [get_ports ddr3_cas_n]
-set_property PACKAGE_PIN U1 [get_ports ddr3_cas_n]
-
-# PadFunction: IO_L24P_T3_34 (SCHEMATIC DDR_WE_B)
-set_property SLEW FAST [get_ports ddr3_we_n]
-set_property IOSTANDARD SSTL135 [get_ports ddr3_we_n]
-set_property PACKAGE_PIN T2 [get_ports ddr3_we_n]
-
-# PadFunction: IO_L6N_T0_VREF_34 (SCHEMATIC DDR_RESET_B)
-set_property SLEW FAST [get_ports ddr3_reset_n]
-set_property IOSTANDARD SSTL135 [get_ports ddr3_reset_n]
-set_property PACKAGE_PIN M5 [get_ports ddr3_reset_n]
-
-# PadFunction: IO_L24N_T3_34 (SCHEMATIC DDR_CKE)
-set_property SLEW FAST [get_ports {ddr3_cke[0]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_cke[0]}]
-set_property PACKAGE_PIN T5 [get_ports {ddr3_cke[0]}]
-
-# PadFunction: IO_25_34 (SCHEMATIC DDR_ODT)
-set_property SLEW FAST [get_ports {ddr3_odt[0]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_odt[0]}]
-set_property PACKAGE_PIN P7 [get_ports {ddr3_odt[0]}]
-
-# PadFunction: IO_L1P_T0_34 (SCHEMATIC DDR_LDM)
-set_property SLEW FAST [get_ports {ddr3_dm[0]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_dm[0]}]
-set_property PACKAGE_PIN K4 [get_ports {ddr3_dm[0]}]
-
-# PadFunction: IO_L7P_T1_34 (SCHEMATIC DDR_UDM)
-set_property SLEW FAST [get_ports {ddr3_dm[1]}]
-set_property IOSTANDARD SSTL135 [get_ports {ddr3_dm[1]}]
-set_property PACKAGE_PIN M3 [get_ports {ddr3_dm[1]}]
-
-# PadFunction: IO_L12P_T1_MRCC_35 (SCHEMATIC DDR_REF_CLK_P)
-set_property IOSTANDARD LVDS_25 [get_ports sys_clk_p]
-
-# PadFunction: IO_L12N_T1_MRCC_35 (SCHEMATIC DDR_REF_CLK_N)
-set_property IOSTANDARD LVDS_25 [get_ports sys_clk_n]
-set_property PACKAGE_PIN C1 [get_ports sys_clk_p]
-set_property PACKAGE_PIN B1 [get_ports sys_clk_n]
-
-# PadFunction: IO_L21N_T3_DQS_35 (SCHEMATIC SW0)
-set_property IOSTANDARD LVCMOS25 [get_ports sys_rst]
-set_property PACKAGE_PIN G1 [get_ports sys_rst]
-
-# PadFunction: IO_L3P_T0_DQS_34 (SCHEMATIC DDR_LDQS_P)
-set_property SLEW FAST [get_ports {ddr3_dqs_p[0]}]
-set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dqs_p[0]}]
-set_property IOSTANDARD DIFF_SSTL135 [get_ports {ddr3_dqs_p[0]}]
-
-# PadFunction: IO_L3N_T0_DQS_34 (SCHEMATIC DDR_LDQS_N)
-set_property SLEW FAST [get_ports {ddr3_dqs_n[0]}]
-set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dqs_n[0]}]
-set_property IOSTANDARD DIFF_SSTL135 [get_ports {ddr3_dqs_n[0]}]
-set_property PACKAGE_PIN K1 [get_ports {ddr3_dqs_p[0]}]
-set_property PACKAGE_PIN L1 [get_ports {ddr3_dqs_n[0]}]
-
-# PadFunction: IO_L9P_T1_DQS_34 (SCHEMATIC DDR_UDQS_P)
-set_property SLEW FAST [get_ports {ddr3_dqs_p[1]}]
-set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dqs_p[1]}]
-set_property IOSTANDARD DIFF_SSTL135 [get_ports {ddr3_dqs_p[1]}]
-
-# PadFunction: IO_L9N_T1_DQS_34 (SCHEMATIC DDR_UDQS_N)
-set_property SLEW FAST [get_ports {ddr3_dqs_n[1]}]
-set_property IN_TERM UNTUNED_SPLIT_50 [get_ports {ddr3_dqs_n[1]}]
-set_property IOSTANDARD DIFF_SSTL135 [get_ports {ddr3_dqs_n[1]}]
-set_property PACKAGE_PIN N3 [get_ports {ddr3_dqs_p[1]}]
-set_property PACKAGE_PIN N2 [get_ports {ddr3_dqs_n[1]}]
-
-# PadFunction: IO_L21P_T3_DQS_34 (SCHEMATIC DDR_CLK_P)
-set_property SLEW FAST [get_ports {ddr3_ck_p[0]}]
-set_property IOSTANDARD DIFF_SSTL135 [get_ports {ddr3_ck_p[0]}]
-
-# PadFunction: IO_L21N_T3_DQS_34 (SCHEMATIC DDR_CLK_N)
-set_property SLEW FAST [get_ports {ddr3_ck_n[0]}]
-set_property IOSTANDARD DIFF_SSTL135 [get_ports {ddr3_ck_n[0]}]
-set_property PACKAGE_PIN R5 [get_ports {ddr3_ck_p[0]}]
-set_property PACKAGE_PIN T4 [get_ports {ddr3_ck_n[0]}]
-
 set_property INTERNAL_VREF 0.675 [get_iobanks 34]
-set_property CFGBS VCCO
-
-set_property BITSTREAM.CONFIG.UNUSEDPIN PULLUP [current_design]
-set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
                 </textarea>
             </div>
         </div>
@@ -546,37 +95,89 @@ set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
 
     <div id="view-repo" class="hidden">
         <div class="panel">
-            <h3>Workspace Configuration</h3>
+            <h3>Source Definition</h3>
             <div class="form-group">
-                <label for="cfg-base">Project Base URL</label>
-                <input type="text" id="cfg-base" value="https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@main/PRODUCTION_GRADE">
+                <label for="cfg-base">Base Raw URL</label>
+                <input type="text" id="cfg-base" value="https://raw.githubusercontent.com/JadanPoll/Vivado/main/PRODUCTION_GRADE">
             </div>
             <div style="display: flex; gap: 15px; margin-top: 15px;">
-                <div class="form-group" style="flex: 1;"><label>Top:</label><input type="text" id="cfg-top-repo" value="serv_top"></div>
-                <div class="form-group" style="flex: 2;"><label>JSON:</label><input type="text" id="cfg-json" value="serv.json"></div>
-                <div class="form-group" style="flex: 2;"><label>XDC:</label><input type="text" id="cfg-xdc-file" value="serv.xdc"></div>
+                <div class="form-group" style="flex: 1;">
+                    <label>Top Module:</label>
+                    <input type="text" id="cfg-top-repo" value="serv_top">
+                </div>
+                <div class="form-group" style="flex: 2;">
+                    <label>Verilog Files:</label>
+                    <input type="text" id="cfg-v-files" value="serv_top.v, serv_alu.v" placeholder="e.g., top.v, alu.v">
+                </div>
+            </div>
+            <div class="form-group" style="margin-top: 15px;">
+                <label>XDC File Path:</label>
+                <div style="display: flex; flex: 1; gap: 10px;">
+                    <input type="text" id="cfg-xdc-file" value="serv.xdc" style="flex: 1;">
+                    <button id="btn-fetch-xdc" class="action-btn gray" style="padding: 8px 16px;">Fetch XDC ↓</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="editor-grid">
+            <div class="panel">
+                <div class="panel-header">
+                    <h3>Remote Verilog Editor</h3>
+                    <div style="display: flex; gap: 5px;">
+                        <select id="repo-v-select" style="padding: 4px; background: #0d0f1a; border: 1px solid #333; color: #fff; border-radius: 4px; width: 120px;" disabled></select>
+                        <button id="btn-fetch-v" class="action-btn gray" style="padding: 6px 12px; font-size: 0.85rem;">Fetch ↓</button>
+                    </div>
+                </div>
+                <textarea id="code-v-repo" spellcheck="false" style="color: #ce9178; height: 280px;" placeholder="Click 'Fetch ↓' to load remote Verilog files..." disabled></textarea>
+            </div>
+            <div class="panel">
+                <h3>Remote Constraints Editor (.xdc)</h3>
+                <textarea id="code-xdc-repo" spellcheck="false" style="color: #9cdcfe; height: 280px;" placeholder="# Paste XDC constraints here or click 'Fetch XDC ↓'..."></textarea>
             </div>
         </div>
     </div>
 
     <div class="controls">
-        <button id="btn-build" class="action-btn">⚙️ 1. Build Pipeline (P&R)</button>
-        <button id="btn-dl-frames" class="action-btn gray" disabled>💾 Download .frames</button>
-        <button id="btn-dl-bit" class="action-btn gray" disabled>💾 Download .bit</button>
+        <button id="btn-build" class="action-btn">⚙️ 1. Build Pipeline</button>
+        <button id="btn-dl-frames" class="action-btn gray" disabled>💾 .frames</button>
+        <button id="btn-dl-bit" class="action-btn gray" disabled>💾 .bit</button>
         <button id="btn-flash" class="action-btn green" disabled>⚡ 2. Flash FPGA</button>
-        <button id="btn-flash-file" class="action-btn gray">⚡ Flash .bit File</button>
+        <button id="btn-flash-file" class="action-btn gray">⚡ Flash File</button>
+        <span id="hw-status">🔎 Checking Board...</span>
     </div>
     
     <pre id="log">System Ready.\n</pre>
 
+    <div class="panel" style="margin-top: 15px;">
+        <div class="panel-header">
+            <h3>🔌 Universal Data Console</h3>
+            <div style="display: flex; gap: 8px;">
+                <button id="btn-serial" class="action-btn gray" style="padding: 6px 12px; font-size: 0.85rem;">Connect USB/UART</button>
+                <button id="btn-ble" class="action-btn blue" style="padding: 6px 12px; font-size: 0.85rem;">Connect BLE</button>
+            </div>
+        </div>
+        <div id="serial-out"></div>
+        <input type="text" id="serial-in" placeholder="Connect via UART or BLE to send commands..." disabled>
+    </div>
+
     <script type="module">
         import brotliPromise from 'https://cdn.jsdelivr.net/npm/brotli-dec-wasm@2.3.2/index.js';
+        import { WebSerialUART } from './ftdi-uart.js';
+        import { UrbanaBLE } from './urbana-ble.js';
 
         let activeMode = 'editor';
         let pipelineState = { fasmStr: null, framesStr: null, bitstream: null };
-        const ENGINE_ASSETS = { wasm: 'nextpnr-xilinx.opt.wasm', chipdb: 'xc7s50.bin.br', fasmMap: 'xc7s50_fasm_map_v4.json.br', yaml: 'part.yaml', idcode: 0x0362F093 };
+        let remoteVerilogFiles = {};
+        let activeRepoVFile = null;
 
+        const ENGINE_ASSETS = { wasm: 'nextpnr-xilinx.opt.wasm', chipdb: 'xc7s50.bin.br', fasmMap: 'xc7s50_fasm_map_v4.json.br', yaml: 'part.yaml', idcode: 0x0362F093 };
         const logEl = document.getElementById('log');
+
+        const persistIds = [
+            'cfg-top-editor', 'code-verilog', 'code-xdc',
+            'cfg-base', 'cfg-top-repo', 'cfg-v-files', 'cfg-xdc-file', 'code-xdc-repo'
+        ];
+
         function log(msg, cls = '') {
             const span = document.createElement('span');
             span.textContent = msg + '\n';
@@ -585,27 +186,253 @@ set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
             logEl.scrollTop = logEl.scrollHeight;
         }
 
-        // --- DOWNLOAD HELPERS ---
-        function downloadBlob(filename, data, isText = false) {
-            const blob = new Blob([data], { type: isText ? 'text/plain' : 'application/octet-stream' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
+        // --- HARDWARE PRE-CHECK ---
+        async function checkHardwareStatus() {
+            try {
+                const devices = await navigator.usb.getDevices();
+                const hasBoard = devices.some(d => d.vendorId === 0x0403 && d.productId === 0x6010);
+                const statusEl = document.getElementById('hw-status');
+                if (hasBoard) {
+                    statusEl.textContent = '🟢 Urbana Board Detected';
+                    statusEl.style.color = '#4af626';
+                } else {
+                    statusEl.textContent = '🔴 No Board Connected';
+                    statusEl.style.color = '#f97171';
+                }
+            } catch(e) {
+                document.getElementById('hw-status').textContent = '⚠️ USB API Error';
+            }
+        }
+        navigator.usb.addEventListener('connect', checkHardwareStatus);
+        navigator.usb.addEventListener('disconnect', checkHardwareStatus);
+
+        // --- TEXTAREA TAB CAPTURE ---
+        document.querySelectorAll('textarea').forEach(ta => {
+            ta.addEventListener('keydown', function(e) {
+                if (e.key === 'Tab') {
+                    e.preventDefault();
+                    const start = this.selectionStart;
+                    const end = this.selectionEnd;
+                    this.value = this.value.substring(0, start) + "    " + this.value.substring(end);
+                    this.selectionStart = this.selectionEnd = start + 4;
+                    this.dispatchEvent(new Event('input')); 
+                }
+            });
+        });
+
+        // --- UNIVERSAL REPL LOGIC (UART + BLE) ---
+        const uart = new WebSerialUART();
+        const ble = new UrbanaBLE();
+        
+        const serialOut = document.getElementById('serial-out');
+        const serialIn = document.getElementById('serial-in');
+        const btnSerial = document.getElementById('btn-serial');
+        const btnBle = document.getElementById('btn-ble');
+        
+        let activeConsole = null; // 'uart' or 'ble'
+
+        function printSerial(text) {
+            serialOut.textContent += text;
+            serialOut.scrollTop = serialOut.scrollHeight;
         }
 
-        document.getElementById('btn-dl-frames').onclick = () => {
-            if (pipelineState.framesStr) downloadBlob('browser_generated.frames', pipelineState.framesStr, true);
+        // --- UART Handlers ---
+        uart.onConnect = () => {
+            btnSerial.textContent = "Disconnect UART";
+            btnSerial.classList.replace('gray', 'green');
+            serialIn.disabled = false;
+            activeConsole = 'uart';
+            printSerial("\n--- USB/UART CONNECTED ---\n");
         };
-        document.getElementById('btn-dl-bit').onclick = () => {
-            if (pipelineState.bitstream) downloadBlob('browser_generated.bit', pipelineState.bitstream, false);
+        uart.onDisconnect = () => {
+            btnSerial.textContent = "Connect USB/UART";
+            btnSerial.classList.replace('green', 'gray');
+            if (activeConsole === 'uart') { serialIn.disabled = true; activeConsole = null; }
+            printSerial("\n--- USB/UART DISCONNECTED ---\n");
+        };
+        uart.onData = printSerial;
+        uart.onError = (err) => { log(`[SERIAL] ${err}`, 'error'); };
+
+        btnSerial.onclick = async () => {
+            if (uart.port) { await uart.disconnect(); } 
+            else {
+                if (activeConsole === 'ble') await ble.disconnect(); // Prevent dual-connection chaos
+                try { await uart.connect(115200); } catch(e) {}
+            }
         };
 
-        // --- TAB MANAGEMENT ---
-        document.getElementById('tab-editor').onclick = () => { activeMode = 'editor'; switchTab(); };
-        document.getElementById('tab-repo').onclick = () => { activeMode = 'repo'; switchTab(); };
+        // --- BLE Handlers ---
+        ble.onConnect = () => {
+            btnBle.textContent = "Disconnect BLE";
+            btnBle.classList.replace('blue', 'green');
+            serialIn.disabled = false;
+            activeConsole = 'ble';
+            printSerial("\n--- BLUETOOTH LE CONNECTED ---\n");
+        };
+        ble.onDisconnect = () => {
+            btnBle.textContent = "Connect BLE";
+            btnBle.classList.replace('green', 'blue');
+            if (activeConsole === 'ble') { serialIn.disabled = true; activeConsole = null; }
+            printSerial("\n--- BLUETOOTH LE DISCONNECTED ---\n");
+        };
+        ble.onData = printSerial;
+        ble.onError = (err) => { log(`[BLE] ${err}`, 'error'); };
+
+        btnBle.onclick = async () => {
+            if (ble.device && ble.device.gatt.connected) { ble.disconnect(); } 
+            else {
+                if (activeConsole === 'uart') await uart.disconnect();
+                try { await ble.connect(); } catch(e) {}
+            }
+        };
+
+        // Route Input Commands to Active Interface
+        serialIn.addEventListener('keydown', async (e) => {
+            if (e.key === 'Enter' && activeConsole) {
+                const cmd = serialIn.value;
+                printSerial(`> ${cmd}\n`); // Local echo
+                
+                if (activeConsole === 'uart') {
+                    await uart.write(cmd + '\r\n');
+                } else if (activeConsole === 'ble') {
+                    await ble.write(cmd + '\r\n');
+                }
+                serialIn.value = '';
+            }
+        });
+
+        // --- URL NORMALIZER ---
+        function normalizeGithubUrl(inputUrl) {
+            try {
+                let url = new URL(inputUrl.trim());
+                if (url.hostname === 'github.com') {
+                    const parts = url.pathname.split('/').filter(Boolean);
+                    if (parts.length < 2) return inputUrl;
+                    const owner = parts[0]; const repo = parts[1];
+                    let branch = 'main'; let pathParts = [];
+                    if (parts.length >= 4 && (parts[2] === 'tree' || parts[2] === 'blob')) {
+                        branch = parts[3]; pathParts = parts.slice(4);
+                    }
+                    if (parts[2] === 'blob') pathParts.pop(); 
+                    const pathStr = pathParts.length > 0 ? '/' + pathParts.join('/') : '';
+                    return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}${pathStr}`;
+                }
+                if (url.hostname === 'raw.githubusercontent.com') {
+                    if (url.pathname.match(/\.[a-zA-Z0-9]+$/)) {
+                        const parts = url.pathname.split('/'); parts.pop();
+                        return url.origin + parts.join('/');
+                    }
+                    return url.origin + url.pathname.replace(/\/$/, "");
+                }
+                return inputUrl; 
+            } catch (e) { return inputUrl; }
+        }
+
+        document.getElementById('cfg-base').addEventListener('change', (e) => {
+            const formatted = normalizeGithubUrl(e.target.value);
+            if (formatted !== e.target.value) { e.target.value = formatted; saveState(); }
+        });
+
+        // --- STATE MANAGEMENT ---
+        function saveState() {
+            try {
+                persistIds.forEach(id => localStorage.setItem(id, document.getElementById(id).value));
+                localStorage.setItem('remoteVerilogFiles', JSON.stringify(remoteVerilogFiles));
+                localStorage.setItem('activeMode', activeMode);
+            } catch(e) {}
+        }
+
+        function loadState() {
+            try {
+                persistIds.forEach(id => {
+                    const val = localStorage.getItem(id);
+                    if(val !== null) document.getElementById(id).value = val;
+                });
+                const savedFiles = localStorage.getItem('remoteVerilogFiles');
+                if(savedFiles) { remoteVerilogFiles = JSON.parse(savedFiles); updateVFileDropdown(); }
+                const savedMode = localStorage.getItem('activeMode');
+                if(savedMode) { activeMode = savedMode; switchTab(); }
+            } catch(e) {}
+        }
+
+        persistIds.forEach(id => { document.getElementById(id).addEventListener('input', saveState); });
+
+        document.getElementById('code-v-repo').addEventListener('input', (e) => {
+            if(activeRepoVFile) { remoteVerilogFiles[activeRepoVFile] = e.target.value; saveState(); }
+        });
+
+        function buildUrl(base, path) { return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`; }
+
+        // --- FILE FETCHING ---
+        document.getElementById('btn-fetch-xdc').onclick = async () => {
+            const btn = document.getElementById('btn-fetch-xdc');
+            btn.disabled = true; btn.textContent = "...";
+            try {
+                const base = normalizeGithubUrl(document.getElementById('cfg-base').value);
+                const path = document.getElementById('cfg-xdc-file').value.trim();
+                log(`[FETCH] Downloading ${path}...`, 'warn');
+                const res = await fetch(buildUrl(base, path));
+                if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to fetch XDC.`);
+                document.getElementById('code-xdc-repo').value = await res.text();
+                log(`[FETCH] XDC loaded successfully.`);
+                saveState();
+            } catch (err) { log(`[FETCH ERROR] ${err.message}`, 'error'); } 
+            finally { btn.disabled = false; btn.textContent = "Fetch XDC ↓"; }
+        };
+
+        document.getElementById('btn-fetch-v').onclick = async () => {
+            const btn = document.getElementById('btn-fetch-v');
+            btn.disabled = true; btn.textContent = "...";
+            try {
+                const base = normalizeGithubUrl(document.getElementById('cfg-base').value);
+                const fileList = document.getElementById('cfg-v-files').value.split(',').map(f => f.trim()).filter(f => f.length > 0);
+                remoteVerilogFiles = {}; 
+                for (const filename of fileList) {
+                    log(`[FETCH] Downloading ${filename}...`);
+                    const res = await fetch(buildUrl(base, filename));
+                    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to fetch ${filename}`);
+                    remoteVerilogFiles[filename] = await res.text();
+                }
+                log(`[FETCH] ${Object.keys(remoteVerilogFiles).length} Verilog files loaded into editor.`);
+                updateVFileDropdown();
+                saveState();
+            } catch(err) { log(`[FETCH ERROR] ${err.message}`, 'error'); }
+            finally { btn.disabled = false; btn.textContent = "Fetch ↓"; }
+        };
+
+        function updateVFileDropdown() {
+            const select = document.getElementById('repo-v-select');
+            const ta = document.getElementById('code-v-repo');
+            select.innerHTML = '';
+            const files = Object.keys(remoteVerilogFiles);
+            if(files.length === 0) { ta.value = ''; ta.disabled = true; select.disabled = true; return; }
+            ta.disabled = false; select.disabled = false;
+            files.forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f; opt.textContent = f.split('/').pop(); 
+                select.appendChild(opt);
+            });
+            activeRepoVFile = files[0];
+            ta.value = remoteVerilogFiles[activeRepoVFile];
+        }
+
+        document.getElementById('repo-v-select').addEventListener('change', (e) => {
+            activeRepoVFile = e.target.value;
+            document.getElementById('code-v-repo').value = remoteVerilogFiles[activeRepoVFile];
+        });
+
+        // --- DOWNLOAD & TABS ---
+        function downloadBlob(filename, data, isText = false) {
+            const blob = new Blob([data], { type: isText ? 'text/plain' : 'application/octet-stream' });
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        }
+
+        document.getElementById('btn-dl-frames').onclick = () => { if (pipelineState.framesStr) downloadBlob('browser_generated.frames', pipelineState.framesStr, true); };
+        document.getElementById('btn-dl-bit').onclick = () => { if (pipelineState.bitstream) downloadBlob('browser_generated.bit', pipelineState.bitstream, false); };
+
+        document.getElementById('tab-editor').onclick = () => { activeMode = 'editor'; saveState(); switchTab(); };
+        document.getElementById('tab-repo').onclick = () => { activeMode = 'repo'; saveState(); switchTab(); };
         function switchTab() {
             document.getElementById('tab-editor').classList.toggle('active', activeMode === 'editor');
             document.getElementById('tab-repo').classList.toggle('active', activeMode === 'repo');
@@ -613,10 +440,7 @@ set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
             document.getElementById('view-repo').classList.toggle('hidden', activeMode !== 'repo');
         }
 
-        function buildUrl(base, path) {
-            return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
-        }
-
+        // --- WORKER FACTORIES ---
         async function spawnWorker(scriptUrl) {
             const res = await fetch(scriptUrl);
             const code = await res.text();
@@ -627,87 +451,72 @@ set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
             const yosysCode = `
                 import { runYosys } from 'https://cdn.jsdelivr.net/npm/@yowasp/yosys/gen/bundle.js';
                 self.onmessage = async (e) => {
-                    const { topModule, verilogCode } = e.data;
+                    const { topModule, verilogFiles } = e.data;
                     try {
-                        // 1. Read Verilog and prep hierarchy
-                        // 2. 'show' command generates the RTL .dot file
-                        // 3. synth_xilinx does the actual compilation
+                        const readCommands = Object.keys(verilogFiles).map(filename => 'read_verilog -sv ' + filename).join('; ');
                         const script = [
-                            'read_verilog -sv input.v',
-                            'hierarchy -top ' + topModule,
-                            'proc; opt; memory; opt', // Clean up the diagram logic
-                            'show -format dot -prefix rtl', // Outputs rtl.dot
+                            readCommands,
+                            'hierarchy -check -top ' + topModule,
+                            'proc; opt; memory; opt',
+                            'show -format dot -prefix rtl',
                             'synth_xilinx -flatten -abc9 -arch xc7 -top ' + topModule,
                             'write_json synth.json'
                         ].join('; ');
                         
-                        const out = await runYosys(['-p', script], { 'input.v': verilogCode }, { 
+                        const out = await runYosys(['-p', script], verilogFiles, { 
                             stdout: b => b && self.postMessage({ type: 'log', text: new TextDecoder().decode(b).trimEnd() }), 
                             stderr: b => b && self.postMessage({ type: 'log', text: '[WARN] ' + new TextDecoder().decode(b).trimEnd() }) 
                         });
 
-                        // Grab the Synthesis JSON
                         const jsonBytes = new TextEncoder().encode(out['synth.json']);
-                        
-                        // Grab the RTL Diagram String
-                        const dotStr = out['rtl.dot'] || '';
-
                         if (jsonBytes.byteLength === 0) throw new Error("Synthesis yielded zero-byte output.");
-                        
-                        // Send BOTH back to the main thread
-                        self.postMessage({ 
-                            type: 'success', 
-                            jsonBuffer: jsonBytes.buffer,
-                            dotStr: dotStr
-                        }, [jsonBytes.buffer]);
-                        
-                    } catch (err) {
-                        self.postMessage({ type: 'error', message: err.message });
-                    }
+                        self.postMessage({ type: 'success', jsonBuffer: jsonBytes.buffer }, [jsonBytes.buffer]);
+                    } catch (err) { self.postMessage({ type: 'error', message: err.message }); }
                 };
             `;
             return new Worker(URL.createObjectURL(new Blob([yosysCode], { type: 'application/javascript' })), { type: 'module' });
         }
+
+        // --- MAIN BUILD PIPELINE ---
         document.getElementById('btn-build').onclick = async () => {
             try {
                 const baseUrl = new URL('./', import.meta.url).href;
                 document.getElementById('btn-build').disabled = true;
-                
-                // UI FIX: Reset all output buttons to disabled at the start of a build
                 document.getElementById('btn-dl-frames').disabled = true;
                 document.getElementById('btn-dl-bit').disabled = true;
                 document.getElementById('btn-flash').disabled = true;
                 
                 let topModule, xdcString, jsonBuffer;
+                let verilogPayload = {};
 
                 if (activeMode === 'editor') {
                     topModule = document.getElementById('cfg-top-editor').value.trim();
-                    log(`\n--- SYNTHESIZING: ${topModule} ---`, 'warn');
-                    const synthWorker = spawnYosysWorker();
-                    jsonBuffer = await new Promise((resolve, reject) => {
-                        synthWorker.onmessage = (e) => {
-                            if (e.data.type === 'log') log(e.data.text);
-                            else if (e.data.type === 'success') resolve(e.data.jsonBuffer);
-                            else if (e.data.type === 'error') reject(e.data.message);
-                        };
-                        synthWorker.postMessage({ topModule, verilogCode: document.getElementById('code-verilog').value.trim() });
-                    });
-                    synthWorker.terminate();
                     xdcString = document.getElementById('code-xdc').value.trim();
+                    verilogPayload['editor.v'] = document.getElementById('code-verilog').value.trim();
                 } else {
                     topModule = document.getElementById('cfg-top-repo').value.trim();
-                    const base = document.getElementById('cfg-base').value.trim();
-                    const [jR, xR] = await Promise.all([
-                        fetch(buildUrl(base, document.getElementById('cfg-json').value.trim())),
-                        fetch(buildUrl(base, document.getElementById('cfg-xdc-file').value.trim()))
-                    ]);
-                    jsonBuffer = await jR.arrayBuffer();
-                    xdcString = await xR.text();
+                    xdcString = document.getElementById('code-xdc-repo').value.trim();
+                    if (!xdcString) throw new Error("XDC Constraints empty. Fetch or paste manually.");
+
+                    const expectedFiles = document.getElementById('cfg-v-files').value.split(',').map(f => f.trim()).filter(f => f.length > 0);
+                    if (expectedFiles.length === 0) throw new Error("Please specify at least one Verilog file.");
+
+                    const missingFiles = expectedFiles.filter(f => !remoteVerilogFiles[f]);
+                    if (missingFiles.length > 0) throw new Error(`Missing fetched content for: ${missingFiles.join(', ')}. Please click 'Fetch ↓' first.`);
+                    expectedFiles.forEach(f => { verilogPayload[f] = remoteVerilogFiles[f]; });
                 }
 
-                if (!jsonBuffer || jsonBuffer.byteLength === 0) {
-                    log(`[WARN] jsonBuffer appears empty — worker may have reported success incorrectly`, 'warn');
-                }
+                log(`\n--- SYNTHESIZING: ${topModule} ---`, 'warn');
+                const synthWorker = spawnYosysWorker();
+                jsonBuffer = await new Promise((resolve, reject) => {
+                    synthWorker.onmessage = (e) => {
+                        if (e.data.type === 'log') log(e.data.text);
+                        else if (e.data.type === 'success') resolve(e.data.jsonBuffer);
+                        else if (e.data.type === 'error') reject(e.data.message);
+                    };
+                    synthWorker.postMessage({ topModule, verilogFiles: verilogPayload });
+                });
+                synthWorker.terminate();
 
                 log(`[MAIN] Netlist ready. Spawning P&R...`, 'warn');
                 const [dbRaw, wasmRes, brotli] = await Promise.all([
@@ -724,31 +533,22 @@ set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
                         else if (e.data.type === 'fasm_fixed') { pipelineState.fasmStr = e.data.data; resolve(); }
                         else if (e.data.type === 'error') reject(e.data.message);
                     };
-                    pnrWorker.postMessage({ baseUrl: new URL('./', import.meta.url).href,
-                        type: 'run', top: topModule, wasmBuffer: wasmRes, chipdbBuffer: dbDecomp, jsonBuffer, xdc: xdcString 
-                    }, [wasmRes, dbDecomp, jsonBuffer]);
+                    pnrWorker.postMessage({ baseUrl: new URL('./', import.meta.url).href, type: 'run', top: topModule, wasmBuffer: wasmRes, chipdbBuffer: dbDecomp, jsonBuffer, xdc: xdcString }, [wasmRes, dbDecomp, jsonBuffer]);
                 });
                 pnrWorker.terminate();
 
                 log(`\n--- ASSEMBLING BITSTREAM ---`, 'warn');
-                log(`[DEBUG] fasmStr length: ${pipelineState.fasmStr ? pipelineState.fasmStr.length : 'NULL'}`);
-                
                 const mapRaw = await fetch(`./${ENGINE_ASSETS.fasmMap}`).then(r => r.arrayBuffer());
                 const map = JSON.parse(new TextDecoder().decode(brotli.decompress(new Uint8Array(mapRaw))));
 
                 const fasmWorker = await spawnWorker('./fasm2frames.js');
                 const frames = await new Promise((res, rej) => {
                     fasmWorker.onmessage = e => {
-                        if (e.data.type === 'success') {
-                            log(`[F2F] ${e.data.telemetry}`);
-                            log(`[F2F] frames length: ${e.data.frames.length}`);
-                            res(e.data.frames);
-                        } else rej(e.data.message);
+                        if (e.data.type === 'success') { log(`[F2F] ${e.data.telemetry}`); res(e.data.frames); }
+                        else rej(e.data.message);
                     };
                     fasmWorker.postMessage({ fasmStr: pipelineState.fasmStr, mapData: map });
                 });
-                
-                log(`[F2F] frames sample:\n${frames.substring(0, 200)}...`);
                 fasmWorker.terminate();
                 pipelineState.framesStr = frames;
 
@@ -761,10 +561,7 @@ set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
                         if (e.data.type === 'success') res(e.data.bitstream);
                         else if (e.data.type === 'error') rej(e.data.message);
                     };
-                    framesWorker.postMessage(
-                        { type: 'run', baseUrl: baseUrl, partYaml: partYaml, framesStr: frames, wasmBuffer: framesWasm },
-                        [framesWasm]
-                    );
+                    framesWorker.postMessage({ type: 'run', baseUrl: baseUrl, partYaml: partYaml, framesStr: frames, wasmBuffer: framesWasm }, [framesWasm]);
                 });
                 framesWorker.terminate();
                 pipelineState.bitstream = bitstream;
@@ -772,7 +569,6 @@ set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
                 log(`[DEBUG] Bitstream size: ${bitstream.length} bytes`);
                 log(`✅ BUILD SUCCESSFUL. Ready to Flash.`, 'warn');
                 
-                // UI FIX: Enable all output buttons on success
                 document.getElementById('btn-dl-frames').disabled = false;
                 document.getElementById('btn-dl-bit').disabled = false;
                 document.getElementById('btn-flash').disabled = false;
@@ -781,21 +577,17 @@ set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
             finally { document.getElementById('btn-build').disabled = false; }
         };
 
+        // --- USB JTAG FLASHING ---
         document.getElementById('btn-flash').onclick = async () => {
             try {
                 document.getElementById('btn-flash').disabled = true;
                 log(`\n--- FLASHING HARDWARE ---`, 'warn');
-
                 const device = await navigator.usb.requestDevice({ filters: [{vendorId: 0x0403, productId: 0x6010}] });
                 const jtag = new WebUSBJtag(device);
                 await jtag.init(30000000);
-                
                 const idcode = await jtag.readIDCODE();
                 log(`[USB] IDCODE: 0x${idcode.toString(16).toUpperCase()}`);
-                if (idcode !== ENGINE_ASSETS.idcode) {
-                    log(`[WARN] Silicon mismatch! Expected 0x${ENGINE_ASSETS.idcode.toString(16).toUpperCase()}`);
-                }
-
+                if (idcode !== ENGINE_ASSETS.idcode) log(`[WARN] Silicon mismatch! Expected 0x${ENGINE_ASSETS.idcode.toString(16).toUpperCase()}`);
                 await jtag.programXC7(pipelineState.bitstream);
                 log("⚡ HARDWARE FLASHED SUCCESSFULLY!", 'warn');
             } catch(err) { log(`[FLASH FATAL] ${err}`, 'error'); }
@@ -804,8 +596,7 @@ set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
 
         document.getElementById('btn-flash-file').onclick = async () => {
             const input = document.createElement('input');
-            input.type = 'file';
-            input.accept = '.bit';
+            input.type = 'file'; input.accept = '.bit';
             input.onchange = async (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
@@ -821,6 +612,33 @@ set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
             };
             input.click();
         };
+
+        // --- GRACEFUL TEARDOWN (QoL) ---
+        window.addEventListener('beforeunload', (e) => {
+            log(`[SYSTEM] Tab closing, cleaning up hardware locks...`, 'warn');
+            
+            // 1. Release UART if open
+            if (uart && uart.port) {
+                // We don't await here because the browser won't wait for async operations on close
+                uart.keepReading = false; 
+                uart.port.close().catch(() => {}); 
+            }
+            
+            // 2. Release BLE if open
+            if (ble && ble.device && ble.device.gatt.connected) {
+                ble.disconnect();
+            }
+
+            // Note: The JTAG flasher (WebUSB) opens and closes its interface per-flash. 
+            // It doesn't hold a persistent background lock like UART/BLE, so it relies 
+            // on the browser's native USB release mechanism on tab close.
+        });
+        // Initialization
+        window.onload = () => {
+            loadState();
+            checkHardwareStatus(); // Run initial USB probe
+        };
+
     </script>
 </body>
 </html>

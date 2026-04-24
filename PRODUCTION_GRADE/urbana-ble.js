@@ -30,13 +30,13 @@ export class UrbanaBLE {
     /**
      * Triggers the browser's BLE pairing UI and connects to the GATT server.
      */
+
     async connect() {
         try {
+            // Tell the browser to show all BLE devices, but request access to our specific UART services
             this.device = await navigator.bluetooth.requestDevice({
-                filters: [{ services: [this.SERVICE_UUID] }],
-                // Fallback if the board broadcasts a different service initially:
-                // acceptAllDevices: true,
-                // optionalServices: [this.SERVICE_UUID]
+                acceptAllDevices: true,
+                optionalServices: [this.SERVICE_UUID] 
             });
 
             this.device.addEventListener('gattserverdisconnected', this._handleDisconnect.bind(this));
@@ -47,7 +47,6 @@ export class UrbanaBLE {
             this.rxCharacteristic = await service.getCharacteristic(this.RX_CHAR_UUID);
             this.txCharacteristic = await service.getCharacteristic(this.TX_CHAR_UUID);
 
-            // Subscribe to incoming FPGA data
             await this.rxCharacteristic.startNotifications();
             this.rxCharacteristic.addEventListener('characteristicvaluechanged', this._processIncoming.bind(this));
 
@@ -58,7 +57,6 @@ export class UrbanaBLE {
             throw err;
         }
     }
-
     /**
      * Drops the GATT connection.
      */

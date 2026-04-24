@@ -63,7 +63,7 @@ filteredXdc = msg.xdc.split('\n').map(line => {
             }
 
             // 2. Safely capture the full port name
-            const match = trimmed.match(/get_ports\s+(?:\{([^}]+)\}|([a-zA-Z0-9_\[\]]+))/);
+            const match = trimmed.match(/get_ports\s+(?:\{([^}]+)\}|([a-zA-Z0-9_]+(?:\[\d+\])?))/);
             if (match) {
                 const fullPort = match[1] || match[2];
                 const basePort = fullPort.replace(/\[\d+\]/g, ''); 
@@ -149,7 +149,10 @@ function handleSuccess() {
     if (successHandled) return;
     successHandled = true;
     try {
+        console.log("art herre");
         const rawFasm = self.FS.readFile('/out.fasm', { encoding: 'utf8' });
+        self.postMessage({ type: "log", message: "=== RAW FASM ===\n" + rawFasm });
+        console.log(rawFasm);
         const fixedFasm = applyFasmFix(rawFasm);
         self.postMessage({ type: 'fasm_fixed', data: fixedFasm });
     } catch (err) {
