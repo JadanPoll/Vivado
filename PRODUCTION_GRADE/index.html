@@ -169,8 +169,8 @@ set_property INTERNAL_VREF 0.675 [get_iobanks 34]
         let pipelineState = { fasmStr: null, framesStr: null, bitstream: null };
         let remoteVerilogFiles = {};
         let activeRepoVFile = null;
-
-        const ENGINE_ASSETS = { wasm: 'nextpnr-xilinx.opt.wasm', chipdb: 'xc7s50.bin.br', fasmMap: 'xc7s50_fasm_map_v4.json.br', yaml: 'part.yaml', idcode: 0x0362F093 };
+        // not using nextpnr-xilinx.opt.wasm for now cause debugging
+        const ENGINE_ASSETS = { wasm: 'nextpnr-xilinx.wasm', chipdb: 'xc7s50.bin.br', fasmMap: 'xc7s50_fasm_map_v4.json.br', yaml: 'part.yaml', idcode: 0x0362F093 };
         const logEl = document.getElementById('log');
 
         const persistIds = [
@@ -456,7 +456,7 @@ set_property INTERNAL_VREF 0.675 [get_iobanks 34]
                         const readCommands = Object.keys(verilogFiles).map(filename => 'read_verilog -sv ' + filename).join('; ');
                         const script = [
                             readCommands,
-                            'hierarchy -check -top ' + topModule,
+                            'hierarchy  -top ' + topModule,
                             'proc; opt; memory; opt',
                             'show -format dot -prefix rtl',
                             'synth_xilinx -flatten -abc9 -arch xc7 -top ' + topModule,
