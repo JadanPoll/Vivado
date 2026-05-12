@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZeroLabs: Universal Silicon IDE (Diagnostic)</title>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #121212; color: #e0e0e0; margin: 2rem; max-width: 1400px; margin-left: auto; margin-right: auto; }
+        h2 { margin-bottom: 5px; color: #4af626; text-transform: uppercase; letter-spacing: 1px; }
+        .subtitle { font-size: 0.9rem; color: #888; margin-bottom: 20px; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 15px; border-bottom: 1px solid #2a3050; padding-bottom: 10px; }
+        .tab { background: transparent; color: #888; border: none; padding: 10px 20px; cursor: pointer; font-weight: bold; border-radius: 4px; transition: all 0.2s; font-size: 0.95rem; }
+        .tab.active { background: #1565c0; color: #fff; }
+        .panel { background: #1e2030; border: 1px solid #2a3050; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+        .panel h3 { margin-top: 0; color: #9cdcfe; font-size: 1.1rem; border-bottom: 1px solid #2a3050; padding-bottom: 8px; }
+        .form-group { margin-bottom: 12px; display: flex; align-items: center; }
+        .form-group label { width: 140px; font-size: 0.9rem; color: #b0b8c8; font-weight: bold; }
+        .form-group input, .form-group select { flex: 1; padding: 8px; background: #0d0f1a; border: 1px solid #333; color: #fff; border-radius: 4px; font-family: monospace; font-size: 0.9rem; }
+        .editor-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        textarea { width: 100%; height: 280px; font-family: monospace; font-size: 0.85rem; background: #000; color: #ce9178; border: 1px solid #3a2a1a; border-radius: 6px; padding: 12px; resize: vertical; line-height: 1.45; box-sizing: border-box; }
+        .hidden { display: none !important; }
+        
+        .controls { display: flex; gap: 10px; margin-bottom: 15px; margin-top: 15px; flex-wrap: wrap; align-items: center; }
+        button.action-btn { background: #007acc; color: white; border: none; padding: 12px 24px; cursor: pointer; font-weight: bold; border-radius: 4px; transition: background 0.2s; font-size: 1rem; }
+        button.action-btn:disabled { background: #333; color: #666; cursor: not-allowed; }
+        button.action-btn:hover:not(:disabled) { background: #005f9e; }
+        button.action-btn.green { background: #2e7d32; }
+        button.action-btn.gray { background: #455a64; }
+        button.action-btn.gray:hover:not(:disabled) { background: #607d8b; }
+        button.action-btn.blue { background: #004ba0; }
+        button.action-btn.blue:hover:not(:disabled) { background: #0063cc; }
+        
+        #log { background: #0d0f1a; padding: 15px; height: 250px; overflow-y: auto; font-family: monospace; font-size: 13px; color: #4af626; border: 1px solid #2a3050; border-radius: 6px; white-space: pre-wrap; line-height: 1.4; }
+        
+        /* Flex utility for headers */
+        .panel-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2a3050; padding-bottom: 8px; margin-bottom: 10px; }
+        .panel-header h3 { border: none; padding: 0; margin: 0; }
+        
+        /* Terminal styles */
+        #serial-out { height: 180px; background: #000; color: #0f0; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 0.85rem; margin-bottom: 5px; border-radius: 4px; border: 1px solid #333; white-space: pre-wrap; }
+        #serial-in { width: 100%; box-sizing: border-box; background: #000; color: #fff; border: 1px solid #333; padding: 10px; border-radius: 4px; font-family: monospace; }
+        #hw-status { font-size: 0.9rem; font-weight: bold; padding: 5px 10px; border-radius: 4px; background: #333; }
+    </style>
+    <script src="ftdi-jtag.js"></script>
+</head>
+<body>
+
+    <h2>⚡ ZeroLabs Web IDE</h2>
+    <div class="subtitle">Diagnostic Build: Full Pipeline + Universal Console</div>
+    
+    <div class="tabs">
+        <button id="tab-editor" class="tab active">Live Editor (Auto-Synthesis)</button>
+        <button id="tab-repo" class="tab">Remote Workspace</button>
+    </div>
+
+    <div id="view-editor">
+        <div class="panel" style="margin-bottom: 15px;">
+            <div class="form-group">
+                <label for="cfg-top-editor">Top Module</label>
+                <input type="text" id="cfg-top-editor" value="top">
+            </div>
+        </div>
+        <div class="editor-grid">
+            <div class="panel">
+                <h3>Verilog Source (.v)</h3>
+                <textarea id="code-verilog" spellcheck="false">
+module top (
+    input  logic        clk,
+    output logic [15:0] LED
+);
+    logic [15:0] divider;
+    always_ff @(posedge clk) begin
+       divider <= divider + 1;
+       if (divider == 0) begin 
+            LED <= LED + 1;
+       end
+    end
+endmodule
+                </textarea>
+            </div>
+            <div class="panel">
+                <h3>Urbana Constraints (.xdc)</h3>
+                <textarea id="code-xdc" spellcheck="false" style="color: #9cdcfe;">
+# URBANA BOARD CONSTRAINTS
+set_property -dict {PACKAGE_PIN N15 IOSTANDARD LVCMOS33} [get_ports {clk}]
+set_property CFGBVS VCCO [current_design]
+set_property CONFIG_VOLTAGE 3.3 [current_design]
+set_property BITSTREAM.Config.SPI_buswidth 4 [current_design]
+set_property -dict {PACKAGE_PIN C13 IOSTANDARD LVCMOS33} [get_ports {LED[0]}]
+set_property INTERNAL_VREF 0.675 [get_iobanks 34]
+                </textarea>
+            </div>
+        </div>
+    </div>
+
+    <div id="view-repo" class="hidden">
+        <div class="panel">
+            <h3>Source Definition</h3>
+            <div class="form-group">
+                <label for="cfg-base">Base Raw URL</label>
+                <input type="text" id="cfg-base" value="https://raw.githubusercontent.com/JadanPoll/Vivado/main/PRODUCTION_GRADE">
+            </div>
+            <div style="display: flex; gap: 15px; margin-top: 15px;">
+                <div class="form-group" style="flex: 1;">
+                    <label>Top Module:</label>
+                    <input type="text" id="cfg-top-repo" value="serv_top">
+                </div>
+                <div class="form-group" style="flex: 2;">
+                    <label>Verilog Files:</label>
+                    <input type="text" id="cfg-v-files" value="serv_top.v, serv_alu.v" placeholder="e.g., top.v, alu.v">
+                </div>
+            </div>
+            <div class="form-group" style="margin-top: 15px;">
+                <label>XDC File Path:</label>
+                <div style="display: flex; flex: 1; gap: 10px;">
+                    <input type="text" id="cfg-xdc-file" value="serv.xdc" style="flex: 1;">
+                    <button id="btn-fetch-xdc" class="action-btn gray" style="padding: 8px 16px;">Fetch XDC ↓</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="editor-grid">
+            <div class="panel">
+                <div class="panel-header">
+                    <h3>Remote Verilog Editor</h3>
+                    <div style="display: flex; gap: 5px;">
+                        <select id="repo-v-select" style="padding: 4px; background: #0d0f1a; border: 1px solid #333; color: #fff; border-radius: 4px; width: 120px;" disabled></select>
+                        <button id="btn-fetch-v" class="action-btn gray" style="padding: 6px 12px; font-size: 0.85rem;">Fetch ↓</button>
+                    </div>
+                </div>
+                <textarea id="code-v-repo" spellcheck="false" style="color: #ce9178; height: 280px;" placeholder="Click 'Fetch ↓' to load remote Verilog files..." disabled></textarea>
+            </div>
+            <div class="panel">
+                <h3>Remote Constraints Editor (.xdc)</h3>
+                <textarea id="code-xdc-repo" spellcheck="false" style="color: #9cdcfe; height: 280px;" placeholder="# Paste XDC constraints here or click 'Fetch XDC ↓'..."></textarea>
+            </div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button id="btn-build" class="action-btn">⚙️ 1. Build Pipeline</button>
+        <button id="btn-dl-frames" class="action-btn gray" disabled>💾 .frames</button>
+        <button id="btn-dl-bit" class="action-btn gray" disabled>💾 .bit</button>
+        <button id="btn-flash" class="action-btn green" disabled>⚡ 2. Flash FPGA</button>
+        <button id="btn-flash-file" class="action-btn gray">⚡ Flash File</button>
+        <span id="hw-status">🔎 Checking Board...</span>
+    </div>
+    
+    <pre id="log">System Ready.\n</pre>
+
+    <div class="panel" style="margin-top: 15px;">
+        <div class="panel-header">
+            <h3>🔌 Universal Data Console</h3>
+            <div style="display: flex; gap: 8px;">
+                <button id="btn-serial" class="action-btn gray" style="padding: 6px 12px; font-size: 0.85rem;">Connect USB/UART</button>
+                <button id="btn-ble" class="action-btn blue" style="padding: 6px 12px; font-size: 0.85rem;">Connect BLE</button>
+            </div>
+        </div>
+        <div id="serial-out"></div>
+        <input type="text" id="serial-in" placeholder="Connect via UART or BLE to send commands..." disabled>
+    </div>
+
+    <script type="module">
+        import brotliPromise from 'https://cdn.jsdelivr.net/npm/brotli-dec-wasm@2.3.2/index.js';
+        import { WebSerialUART } from './ftdi-uart.js';
+        import { UrbanaBLE } from './urbana-ble.js';
+
+        let activeMode = 'editor';
+        let pipelineState = { fasmStr: null, framesStr: null, bitstream: null };
+        let remoteVerilogFiles = {};
+        let activeRepoVFile = null;
+        // not using nextpnr-xilinx.opt.wasm for now cause debugging
+        const ENGINE_ASSETS = { wasm: 'nextpnr-xilinx.wasm', chipdb: 'xc7s50.bin.br', fasmMap: 'xc7s50_fasm_map_v4.json.br', yaml: 'part.yaml', idcode: 0x0362F093 };
+        const logEl = document.getElementById('log');
+
+        const persistIds = [
+            'cfg-top-editor', 'code-verilog', 'code-xdc',
+            'cfg-base', 'cfg-top-repo', 'cfg-v-files', 'cfg-xdc-file', 'code-xdc-repo'
+        ];
+
+        function log(msg, cls = '') {
+            const span = document.createElement('span');
+            span.textContent = msg + '\n';
+            if (cls) span.className = cls;
+            logEl.appendChild(span);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        // --- HARDWARE PRE-CHECK ---
+        async function checkHardwareStatus() {
+            try {
+                const devices = await navigator.usb.getDevices();
+                const hasBoard = devices.some(d => d.vendorId === 0x0403 && d.productId === 0x6010);
+                const statusEl = document.getElementById('hw-status');
+                if (hasBoard) {
+                    statusEl.textContent = '🟢 Urbana Board Detected';
+                    statusEl.style.color = '#4af626';
+                } else {
+                    statusEl.textContent = '🔴 No Board Connected';
+                    statusEl.style.color = '#f97171';
+                }
+            } catch(e) {
+                document.getElementById('hw-status').textContent = '⚠️ USB API Error';
+            }
+        }
+        navigator.usb.addEventListener('connect', checkHardwareStatus);
+        navigator.usb.addEventListener('disconnect', checkHardwareStatus);
+
+        // --- TEXTAREA TAB CAPTURE ---
+        document.querySelectorAll('textarea').forEach(ta => {
+            ta.addEventListener('keydown', function(e) {
+                if (e.key === 'Tab') {
+                    e.preventDefault();
+                    const start = this.selectionStart;
+                    const end = this.selectionEnd;
+                    this.value = this.value.substring(0, start) + "    " + this.value.substring(end);
+                    this.selectionStart = this.selectionEnd = start + 4;
+                    this.dispatchEvent(new Event('input')); 
+                }
+            });
+        });
+
+        // --- UNIVERSAL REPL LOGIC (UART + BLE) ---
+        const uart = new WebSerialUART();
+        const ble = new UrbanaBLE();
+        
+        const serialOut = document.getElementById('serial-out');
+        const serialIn = document.getElementById('serial-in');
+        const btnSerial = document.getElementById('btn-serial');
+        const btnBle = document.getElementById('btn-ble');
+        
+        let activeConsole = null; // 'uart' or 'ble'
+
+        function printSerial(text) {
+            serialOut.textContent += text;
+            serialOut.scrollTop = serialOut.scrollHeight;
+        }
+
+        // --- UART Handlers ---
+        uart.onConnect = () => {
+            btnSerial.textContent = "Disconnect UART";
+            btnSerial.classList.replace('gray', 'green');
+            serialIn.disabled = false;
+            activeConsole = 'uart';
+            printSerial("\n--- USB/UART CONNECTED ---\n");
+        };
+        uart.onDisconnect = () => {
+            btnSerial.textContent = "Connect USB/UART";
+            btnSerial.classList.replace('green', 'gray');
+            if (activeConsole === 'uart') { serialIn.disabled = true; activeConsole = null; }
+            printSerial("\n--- USB/UART DISCONNECTED ---\n");
+        };
+        uart.onData = printSerial;
+        uart.onError = (err) => { log(`[SERIAL] ${err}`, 'error'); };
+
+        btnSerial.onclick = async () => {
+            if (uart.port) { await uart.disconnect(); } 
+            else {
+                if (activeConsole === 'ble') await ble.disconnect(); // Prevent dual-connection chaos
+                try { await uart.connect(115200); } catch(e) {}
+            }
+        };
+
+        // --- BLE Handlers ---
+        ble.onConnect = () => {
+            btnBle.textContent = "Disconnect BLE";
+            btnBle.classList.replace('blue', 'green');
+            serialIn.disabled = false;
+            activeConsole = 'ble';
+            printSerial("\n--- BLUETOOTH LE CONNECTED ---\n");
+        };
+        ble.onDisconnect = () => {
+            btnBle.textContent = "Connect BLE";
+            btnBle.classList.replace('green', 'blue');
+            if (activeConsole === 'ble') { serialIn.disabled = true; activeConsole = null; }
+            printSerial("\n--- BLUETOOTH LE DISCONNECTED ---\n");
+        };
+        ble.onData = printSerial;
+        ble.onError = (err) => { log(`[BLE] ${err}`, 'error'); };
+
+        btnBle.onclick = async () => {
+            if (ble.device && ble.device.gatt.connected) { ble.disconnect(); } 
+            else {
+                if (activeConsole === 'uart') await uart.disconnect();
+                try { await ble.connect(); } catch(e) {}
+            }
+        };
+
+        // Route Input Commands to Active Interface
+        serialIn.addEventListener('keydown', async (e) => {
+            if (e.key === 'Enter' && activeConsole) {
+                const cmd = serialIn.value;
+                printSerial(`> ${cmd}\n`); // Local echo
+                
+                if (activeConsole === 'uart') {
+                    await uart.write(cmd + '\r\n');
+                } else if (activeConsole === 'ble') {
+                    await ble.write(cmd + '\r\n');
+                }
+                serialIn.value = '';
+            }
+        });
+
+        // --- URL NORMALIZER ---
+        function normalizeGithubUrl(inputUrl) {
+            try {
+                let url = new URL(inputUrl.trim());
+                if (url.hostname === 'github.com') {
+                    const parts = url.pathname.split('/').filter(Boolean);
+                    if (parts.length < 2) return inputUrl;
+                    const owner = parts[0]; const repo = parts[1];
+                    let branch = 'main'; let pathParts = [];
+                    if (parts.length >= 4 && (parts[2] === 'tree' || parts[2] === 'blob')) {
+                        branch = parts[3]; pathParts = parts.slice(4);
+                    }
+                    if (parts[2] === 'blob') pathParts.pop(); 
+                    const pathStr = pathParts.length > 0 ? '/' + pathParts.join('/') : '';
+                    return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}${pathStr}`;
+                }
+                if (url.hostname === 'raw.githubusercontent.com') {
+                    if (url.pathname.match(/\.[a-zA-Z0-9]+$/)) {
+                        const parts = url.pathname.split('/'); parts.pop();
+                        return url.origin + parts.join('/');
+                    }
+                    return url.origin + url.pathname.replace(/\/$/, "");
+                }
+                return inputUrl; 
+            } catch (e) { return inputUrl; }
+        }
+
+        document.getElementById('cfg-base').addEventListener('change', (e) => {
+            const formatted = normalizeGithubUrl(e.target.value);
+            if (formatted !== e.target.value) { e.target.value = formatted; saveState(); }
+        });
+
+        // --- STATE MANAGEMENT ---
+        function saveState() {
+            try {
+                persistIds.forEach(id => localStorage.setItem(id, document.getElementById(id).value));
+                localStorage.setItem('remoteVerilogFiles', JSON.stringify(remoteVerilogFiles));
+                localStorage.setItem('activeMode', activeMode);
+            } catch(e) {}
+        }
+
+        function loadState() {
+            try {
+                persistIds.forEach(id => {
+                    const val = localStorage.getItem(id);
+                    if(val !== null) document.getElementById(id).value = val;
+                });
+                const savedFiles = localStorage.getItem('remoteVerilogFiles');
+                if(savedFiles) { remoteVerilogFiles = JSON.parse(savedFiles); updateVFileDropdown(); }
+                const savedMode = localStorage.getItem('activeMode');
+                if(savedMode) { activeMode = savedMode; switchTab(); }
+            } catch(e) {}
+        }
+
+        persistIds.forEach(id => { document.getElementById(id).addEventListener('input', saveState); });
+
+        document.getElementById('code-v-repo').addEventListener('input', (e) => {
+            if(activeRepoVFile) { remoteVerilogFiles[activeRepoVFile] = e.target.value; saveState(); }
+        });
+
+        function buildUrl(base, path) { return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`; }
+
+        // --- FILE FETCHING ---
+        document.getElementById('btn-fetch-xdc').onclick = async () => {
+            const btn = document.getElementById('btn-fetch-xdc');
+            btn.disabled = true; btn.textContent = "...";
+            try {
+                const base = normalizeGithubUrl(document.getElementById('cfg-base').value);
+                const path = document.getElementById('cfg-xdc-file').value.trim();
+                log(`[FETCH] Downloading ${path}...`, 'warn');
+                const res = await fetch(buildUrl(base, path));
+                if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to fetch XDC.`);
+                document.getElementById('code-xdc-repo').value = await res.text();
+                log(`[FETCH] XDC loaded successfully.`);
+                saveState();
+            } catch (err) { log(`[FETCH ERROR] ${err.message}`, 'error'); } 
+            finally { btn.disabled = false; btn.textContent = "Fetch XDC ↓"; }
+        };
+
+        document.getElementById('btn-fetch-v').onclick = async () => {
+            const btn = document.getElementById('btn-fetch-v');
+            btn.disabled = true; btn.textContent = "...";
+            try {
+                const base = normalizeGithubUrl(document.getElementById('cfg-base').value);
+                const fileList = document.getElementById('cfg-v-files').value.split(',').map(f => f.trim()).filter(f => f.length > 0);
+                remoteVerilogFiles = {}; 
+                for (const filename of fileList) {
+                    log(`[FETCH] Downloading ${filename}...`);
+                    const res = await fetch(buildUrl(base, filename));
+                    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to fetch ${filename}`);
+                    remoteVerilogFiles[filename] = await res.text();
+                }
+                log(`[FETCH] ${Object.keys(remoteVerilogFiles).length} Verilog files loaded into editor.`);
+                updateVFileDropdown();
+                saveState();
+            } catch(err) { log(`[FETCH ERROR] ${err.message}`, 'error'); }
+            finally { btn.disabled = false; btn.textContent = "Fetch ↓"; }
+        };
+
+        function updateVFileDropdown() {
+            const select = document.getElementById('repo-v-select');
+            const ta = document.getElementById('code-v-repo');
+            select.innerHTML = '';
+            const files = Object.keys(remoteVerilogFiles);
+            if(files.length === 0) { ta.value = ''; ta.disabled = true; select.disabled = true; return; }
+            ta.disabled = false; select.disabled = false;
+            files.forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f; opt.textContent = f.split('/').pop(); 
+                select.appendChild(opt);
+            });
+            activeRepoVFile = files[0];
+            ta.value = remoteVerilogFiles[activeRepoVFile];
+        }
+
+        document.getElementById('repo-v-select').addEventListener('change', (e) => {
+            activeRepoVFile = e.target.value;
+            document.getElementById('code-v-repo').value = remoteVerilogFiles[activeRepoVFile];
+        });
+
+        // --- DOWNLOAD & TABS ---
+        function downloadBlob(filename, data, isText = false) {
+            const blob = new Blob([data], { type: isText ? 'text/plain' : 'application/octet-stream' });
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        }
+
+        document.getElementById('btn-dl-frames').onclick = () => { if (pipelineState.framesStr) downloadBlob('browser_generated.frames', pipelineState.framesStr, true); };
+        document.getElementById('btn-dl-bit').onclick = () => { if (pipelineState.bitstream) downloadBlob('browser_generated.bit', pipelineState.bitstream, false); };
+
+        document.getElementById('tab-editor').onclick = () => { activeMode = 'editor'; saveState(); switchTab(); };
+        document.getElementById('tab-repo').onclick = () => { activeMode = 'repo'; saveState(); switchTab(); };
+        function switchTab() {
+            document.getElementById('tab-editor').classList.toggle('active', activeMode === 'editor');
+            document.getElementById('tab-repo').classList.toggle('active', activeMode === 'repo');
+            document.getElementById('view-editor').classList.toggle('hidden', activeMode !== 'editor');
+            document.getElementById('view-repo').classList.toggle('hidden', activeMode !== 'repo');
+        }
+
+        // --- WORKER FACTORIES ---
+        async function spawnWorker(scriptUrl) {
+            const res = await fetch(scriptUrl);
+            const code = await res.text();
+            return new Worker(URL.createObjectURL(new Blob([code], { type: 'application/javascript' })));
+        }
+
+        function spawnYosysWorker() {
+            const yosysCode = `
+                import { runYosys } from 'https://cdn.jsdelivr.net/npm/@yowasp/yosys/gen/bundle.js';
+                self.onmessage = async (e) => {
+                    const { topModule, verilogFiles } = e.data;
+                    try {
+                        const readCommands = Object.keys(verilogFiles).map(filename => 'read_verilog -sv ' + filename).join('; ');
+                        const script = [
+                            readCommands,
+                            'hierarchy  -top ' + topModule,
+                            'proc; opt; memory; opt',
+                            'show -format dot -prefix rtl',
+                            'synth_xilinx -flatten -abc9 -arch xc7 -top ' + topModule,
+                            'write_json synth.json'
+                        ].join('; ');
+                        
+                        const out = await runYosys(['-p', script], verilogFiles, { 
+                            stdout: b => b && self.postMessage({ type: 'log', text: new TextDecoder().decode(b).trimEnd() }), 
+                            stderr: b => b && self.postMessage({ type: 'log', text: '[WARN] ' + new TextDecoder().decode(b).trimEnd() }) 
+                        });
+
+                        const jsonBytes = new TextEncoder().encode(out['synth.json']);
+                        if (jsonBytes.byteLength === 0) throw new Error("Synthesis yielded zero-byte output.");
+                        self.postMessage({ type: 'success', jsonBuffer: jsonBytes.buffer }, [jsonBytes.buffer]);
+                    } catch (err) { self.postMessage({ type: 'error', message: err.message }); }
+                };
+            `;
+            return new Worker(URL.createObjectURL(new Blob([yosysCode], { type: 'application/javascript' })), { type: 'module' });
+        }
+
+        // --- MAIN BUILD PIPELINE ---
+        document.getElementById('btn-build').onclick = async () => {
+            try {
+                const baseUrl = new URL('./', import.meta.url).href;
+                document.getElementById('btn-build').disabled = true;
+                document.getElementById('btn-dl-frames').disabled = true;
+                document.getElementById('btn-dl-bit').disabled = true;
+                document.getElementById('btn-flash').disabled = true;
+                
+                let topModule, xdcString, jsonBuffer;
+                let verilogPayload = {};
+
+                if (activeMode === 'editor') {
+                    topModule = document.getElementById('cfg-top-editor').value.trim();
+                    xdcString = document.getElementById('code-xdc').value.trim();
+                    verilogPayload['editor.v'] = document.getElementById('code-verilog').value.trim();
+                } else {
+                    topModule = document.getElementById('cfg-top-repo').value.trim();
+                    xdcString = document.getElementById('code-xdc-repo').value.trim();
+                    if (!xdcString) throw new Error("XDC Constraints empty. Fetch or paste manually.");
+
+                    const expectedFiles = document.getElementById('cfg-v-files').value.split(',').map(f => f.trim()).filter(f => f.length > 0);
+                    if (expectedFiles.length === 0) throw new Error("Please specify at least one Verilog file.");
+
+                    const missingFiles = expectedFiles.filter(f => !remoteVerilogFiles[f]);
+                    if (missingFiles.length > 0) throw new Error(`Missing fetched content for: ${missingFiles.join(', ')}. Please click 'Fetch ↓' first.`);
+                    expectedFiles.forEach(f => { verilogPayload[f] = remoteVerilogFiles[f]; });
+                }
+
+                log(`\n--- SYNTHESIZING: ${topModule} ---`, 'warn');
+                const synthWorker = spawnYosysWorker();
+                jsonBuffer = await new Promise((resolve, reject) => {
+                    synthWorker.onmessage = (e) => {
+                        if (e.data.type === 'log') log(e.data.text);
+                        else if (e.data.type === 'success') resolve(e.data.jsonBuffer);
+                        else if (e.data.type === 'error') reject(e.data.message);
+                    };
+                    synthWorker.postMessage({ topModule, verilogFiles: verilogPayload });
+                });
+                synthWorker.terminate();
+
+                log(`[MAIN] Netlist ready. Spawning P&R...`, 'warn');
+                const [dbRaw, wasmRes, brotli] = await Promise.all([
+                    fetch(`./${ENGINE_ASSETS.chipdb}`).then(r => r.arrayBuffer()),
+                    fetch(`./${ENGINE_ASSETS.wasm}`).then(r => r.arrayBuffer()),
+                    brotliPromise
+                ]);
+                const dbDecomp = brotli.decompress(new Uint8Array(dbRaw)).buffer;
+
+                const pnrWorker = await spawnWorker('./pnr-worker.js');
+                await new Promise((resolve, reject) => {
+                    pnrWorker.onmessage = (e) => {
+                        if (e.data.type === 'log') log(`[PNR] ${e.data.text}`);
+                        else if (e.data.type === 'fasm_fixed') { pipelineState.fasmStr = e.data.data; resolve(); }
+                        else if (e.data.type === 'error') reject(e.data.message);
+                    };
+                    pnrWorker.postMessage({ baseUrl: new URL('./', import.meta.url).href, type: 'run', top: topModule, wasmBuffer: wasmRes, chipdbBuffer: dbDecomp, jsonBuffer, xdc: xdcString }, [wasmRes, dbDecomp, jsonBuffer]);
+                });
+                pnrWorker.terminate();
+
+                log(`\n--- ASSEMBLING BITSTREAM ---`, 'warn');
+                const mapRaw = await fetch(`./${ENGINE_ASSETS.fasmMap}`).then(r => r.arrayBuffer());
+                const map = JSON.parse(new TextDecoder().decode(brotli.decompress(new Uint8Array(mapRaw))));
+
+                const fasmWorker = await spawnWorker('./fasm2frames.js');
+                const frames = await new Promise((res, rej) => {
+                    fasmWorker.onmessage = e => {
+                        if (e.data.type === 'success') { log(`[F2F] ${e.data.telemetry}`); res(e.data.frames); }
+                        else rej(e.data.message);
+                    };
+                    fasmWorker.postMessage({ fasmStr: pipelineState.fasmStr, mapData: map });
+                });
+                fasmWorker.terminate();
+                pipelineState.framesStr = frames;
+
+                const partYaml = await fetch(baseUrl + ENGINE_ASSETS.yaml).then(r => r.text());
+                const framesWasm = await fetch(baseUrl + 'xc7frames2bit.wasm').then(r => r.arrayBuffer());
+                const framesWorker = await spawnWorker(baseUrl + 'frames-worker.js');
+
+                const bitstream = await new Promise((res, rej) => {
+                    framesWorker.onmessage = e => {
+                        if (e.data.type === 'success') res(e.data.bitstream);
+                        else if (e.data.type === 'error') rej(e.data.message);
+                    };
+                    framesWorker.postMessage({ type: 'run', baseUrl: baseUrl, partYaml: partYaml, framesStr: frames, wasmBuffer: framesWasm }, [framesWasm]);
+                });
+                framesWorker.terminate();
+                pipelineState.bitstream = bitstream;
+
+                log(`[DEBUG] Bitstream size: ${bitstream.length} bytes`);
+                log(`✅ BUILD SUCCESSFUL. Ready to Flash.`, 'warn');
+                
+                document.getElementById('btn-dl-frames').disabled = false;
+                document.getElementById('btn-dl-bit').disabled = false;
+                document.getElementById('btn-flash').disabled = false;
+
+            } catch (err) { log(`[BUILD FATAL] ${err}`, 'error'); }
+            finally { document.getElementById('btn-build').disabled = false; }
+        };
+
+        // --- USB JTAG FLASHING ---
+        document.getElementById('btn-flash').onclick = async () => {
+            try {
+                document.getElementById('btn-flash').disabled = true;
+                log(`\n--- FLASHING HARDWARE ---`, 'warn');
+                const device = await navigator.usb.requestDevice({ filters: [{vendorId: 0x0403, productId: 0x6010}] });
+                const jtag = new WebUSBJtag(device);
+                await jtag.init(30000000);
+                const idcode = await jtag.readIDCODE();
+                log(`[USB] IDCODE: 0x${idcode.toString(16).toUpperCase()}`);
+                if (idcode !== ENGINE_ASSETS.idcode) log(`[WARN] Silicon mismatch! Expected 0x${ENGINE_ASSETS.idcode.toString(16).toUpperCase()}`);
+                await jtag.programXC7(pipelineState.bitstream);
+                log("⚡ HARDWARE FLASHED SUCCESSFULLY!", 'warn');
+            } catch(err) { log(`[FLASH FATAL] ${err}`, 'error'); }
+            finally { document.getElementById('btn-flash').disabled = false; }
+        };
+
+        document.getElementById('btn-flash-file').onclick = async () => {
+            const input = document.createElement('input');
+            input.type = 'file'; input.accept = '.bit';
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const bitstream = new Uint8Array(await file.arrayBuffer());
+                try {
+                    log(`\n--- FLASHING ${file.name} ---`, 'warn');
+                    const device = await navigator.usb.requestDevice({ filters: [{vendorId: 0x0403, productId: 0x6010}] });
+                    const jtag = new WebUSBJtag(device);
+                    await jtag.init(30000000);
+                    await jtag.programXC7(bitstream);
+                    log("⚡ HARDWARE FLASHED SUCCESSFULLY!", 'warn');
+                } catch(err) { log(`[FLASH FATAL] ${err}`, 'error'); }
+            };
+            input.click();
+        };
+
+        // --- GRACEFUL TEARDOWN (QoL) ---
+        window.addEventListener('beforeunload', (e) => {
+            log(`[SYSTEM] Tab closing, cleaning up hardware locks...`, 'warn');
+            
+            // 1. Release UART if open
+            if (uart && uart.port) {
+                // We don't await here because the browser won't wait for async operations on close
+                uart.keepReading = false; 
+                uart.port.close().catch(() => {}); 
+            }
+            
+            // 2. Release BLE if open
+            if (ble && ble.device && ble.device.gatt.connected) {
+                ble.disconnect();
+            }
+
+            // Note: The JTAG flasher (WebUSB) opens and closes its interface per-flash. 
+            // It doesn't hold a persistent background lock like UART/BLE, so it relies 
+            // on the browser's native USB release mechanism on tab close.
+        });
+        // Initialization
+        window.onload = () => {
+            loadState();
+            checkHardwareStatus(); // Run initial USB probe
+        };
+
+    </script>
+</body>
+</html>

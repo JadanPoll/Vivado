@@ -109,6 +109,37 @@ filteredXdc = msg.xdc.split('\n').map(line => {
     self.Module = {
         noInitialRun: false,
         wasmBinary: msg.wasmBuffer,
+
+        // --- WASM INSTANTIATION STUB ---
+
+        instantiateWasm: function(imports, successCallback) {
+            // 1. Stub the Emscripten environment imports
+            if (!imports.env) imports.env = {};
+            imports.env._emscripten_runtime_keepalive_clear = function() {};
+
+            // 2. Stub the WASI system imports
+            if (!imports.wasi_snapshot_preview1) imports.wasi_snapshot_preview1 = {};
+            imports.wasi_snapshot_preview1.proc_exit = function(code) {
+                // Catch the C++ exit() call. 
+                // We do nothing here because our Worker handles its own termination.
+            };
+
+            // THE NEW STUB: Signal handler logic
+           // We provide a dummy function that takes 3 arguments to satisfy the WASM signature
+            imports.env.__call_sighandler = function(handler, sig, siginfo) {
+                console.warn(`[PNR] Signal ${sig} caught, but handlers are stubbed.`);
+            };
+            // 3. Proceed with normal instantiation
+            WebAssembly.instantiate(msg.wasmBuffer, imports).then(function(output) {
+                successCallback(output.instance, output.module);
+            }).catch(function(err) {
+                self.postMessage({ type: 'error', message: `WASM Boot Error: ${err}` });
+            });
+
+            return {}; 
+        },
+        // -------------------------------
+
         arguments: [
             '--chipdb', '/chipdb.bin',
             '--json', '/design.json',
@@ -141,6 +172,7 @@ filteredXdc = msg.xdc.split('\n').map(line => {
             self.postMessage({ type: 'done' });
         }
     };
+
 
     importScripts(self._baseUrl + 'nextpnr-xilinx.js');
 }
