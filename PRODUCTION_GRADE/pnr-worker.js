@@ -115,8 +115,9 @@ filteredXdc = msg.xdc.split('\n').map(line => {
         instantiateWasm: function(imports, successCallback) {
             // 1. Stub the Emscripten environment imports
             if (!imports.env) imports.env = {};
-            imports.env._emscripten_runtime_keepalive_clear = function() {};
+            //imports.env._emscripten_runtime_keepalive_clear = function() {};
 
+/*
             // 2. Stub the WASI system imports
             if (!imports.wasi_snapshot_preview1) imports.wasi_snapshot_preview1 = {};
             imports.wasi_snapshot_preview1.proc_exit = function(code) {
@@ -128,7 +129,7 @@ filteredXdc = msg.xdc.split('\n').map(line => {
            // We provide a dummy function that takes 3 arguments to satisfy the WASM signature
             imports.env.__call_sighandler = function(handler, sig, siginfo) {
                 console.warn(`[PNR] Signal ${sig} caught, but handlers are stubbed.`);
-            };
+            };*/
             // 3. Proceed with normal instantiation
             WebAssembly.instantiate(msg.wasmBuffer, imports).then(function(output) {
                 successCallback(output.instance, output.module);

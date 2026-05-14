@@ -30,7 +30,10 @@
         button.action-btn.blue { background: #004ba0; }
         button.action-btn.blue:hover:not(:disabled) { background: #0063cc; }
         
-        #log { background: #0d0f1a; padding: 15px; height: 250px; overflow-y: auto; font-family: monospace; font-size: 13px; color: #4af626; border: 1px solid #2a3050; border-radius: 6px; white-space: pre-wrap; line-height: 1.4; }
+        #log { background: #0d0f1a; padding: 15px; height: 350px; overflow-y: auto; font-family: monospace; font-size: 13px; color: #4af626; border: 1px solid #2a3050; border-radius: 6px; white-space: pre-wrap; line-height: 1.4; }
+        #log span.error { color: #ff5555; }
+        #log span.warn { color: #ffb86c; }
+        #log span.info { color: #8be9fd; }
         
         /* Flex utility for headers */
         .panel-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2a3050; padding-bottom: 8px; margin-bottom: 10px; }
@@ -169,8 +172,16 @@ set_property INTERNAL_VREF 0.675 [get_iobanks 34]
         let pipelineState = { fasmStr: null, framesStr: null, bitstream: null };
         let remoteVerilogFiles = {};
         let activeRepoVFile = null;
-        // not using nextpnr-xilinx.opt.wasm for now cause debugging
-        const ENGINE_ASSETS = { wasm: 'nextpnr-xilinx.wasm', chipdb: 'xc7s50.bin.br', fasmMap: 'xc7s50_fasm_map_v4.json.br', yaml: 'part.yaml', idcode: 0x0362F093 };
+
+        // UPDATED ENGINE_ASSETS: Now fully fetching optimized, Brotli-compressed engines
+        const ENGINE_ASSETS = { 
+            wasm: 'nextpnr-xilinx.opt.wasm.br', 
+            framesWasm: 'xc7frames2bit.opt.wasm.br',
+            chipdb: 'xc7s50.bin.br', 
+            fasmMap: 'xc7s50_fasm_map_v7.json.br', 
+            yaml: 'part.yaml', 
+            idcode: 0x0362F093 
+        };
         const logEl = document.getElementById('log');
 
         const persistIds = [
@@ -178,13 +189,33 @@ set_property INTERNAL_VREF 0.675 [get_iobanks 34]
             'cfg-base', 'cfg-top-repo', 'cfg-v-files', 'cfg-xdc-file', 'code-xdc-repo'
         ];
 
+        // --- RIGOROUS LOGGING ENGINE ---
         function log(msg, cls = '') {
+            const time = new Date().toISOString().substring(11, 23); // HH:MM:SS.mmm
+            const textStr = `[${time}] ${msg}`;
+            
+            // Mirror to browser DevTools for crash survivability
+            if (cls === 'error') console.error(textStr);
+            else if (cls === 'warn') console.warn(textStr);
+            else if (cls === 'info') console.info(textStr);
+            else console.log(textStr);
+
+            // Append to UI
             const span = document.createElement('span');
-            span.textContent = msg + '\n';
+            span.textContent = textStr + '\n';
             if (cls) span.className = cls;
             logEl.appendChild(span);
             logEl.scrollTop = logEl.scrollHeight;
         }
+
+        // Global fault catchers
+        window.onerror = function(msg, url, line, col, error) {
+            log(`[FATAL] Global UI Error: ${msg} at ${line}:${col}`, 'error');
+            if (error && error.stack) log(error.stack, 'error');
+        };
+        window.onunhandledrejection = function(event) {
+            log(`[FATAL] Unhandled Promise Rejection: ${event.reason}`, 'error');
+        };
 
         // --- HARDWARE PRE-CHECK ---
         async function checkHardwareStatus() {
@@ -229,7 +260,7 @@ set_property INTERNAL_VREF 0.675 [get_iobanks 34]
         const btnSerial = document.getElementById('btn-serial');
         const btnBle = document.getElementById('btn-ble');
         
-        let activeConsole = null; // 'uart' or 'ble'
+        let activeConsole = null;
 
         function printSerial(text) {
             serialOut.textContent += text;
@@ -256,7 +287,7 @@ set_property INTERNAL_VREF 0.675 [get_iobanks 34]
         btnSerial.onclick = async () => {
             if (uart.port) { await uart.disconnect(); } 
             else {
-                if (activeConsole === 'ble') await ble.disconnect(); // Prevent dual-connection chaos
+                if (activeConsole === 'ble') await ble.disconnect();
                 try { await uart.connect(115200); } catch(e) {}
             }
         };
@@ -290,13 +321,9 @@ set_property INTERNAL_VREF 0.675 [get_iobanks 34]
         serialIn.addEventListener('keydown', async (e) => {
             if (e.key === 'Enter' && activeConsole) {
                 const cmd = serialIn.value;
-                printSerial(`> ${cmd}\n`); // Local echo
-                
-                if (activeConsole === 'uart') {
-                    await uart.write(cmd + '\r\n');
-                } else if (activeConsole === 'ble') {
-                    await ble.write(cmd + '\r\n');
-                }
+                printSerial(`> ${cmd}\n`); 
+                if (activeConsole === 'uart') await uart.write(cmd + '\r\n');
+                else if (activeConsole === 'ble') await ble.write(cmd + '\r\n');
                 serialIn.value = '';
             }
         });
@@ -370,7 +397,7 @@ set_property INTERNAL_VREF 0.675 [get_iobanks 34]
             try {
                 const base = normalizeGithubUrl(document.getElementById('cfg-base').value);
                 const path = document.getElementById('cfg-xdc-file').value.trim();
-                log(`[FETCH] Downloading ${path}...`, 'warn');
+                log(`[FETCH] Downloading ${path}...`, 'info');
                 const res = await fetch(buildUrl(base, path));
                 if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to fetch XDC.`);
                 document.getElementById('code-xdc-repo').value = await res.text();
@@ -480,6 +507,7 @@ set_property INTERNAL_VREF 0.675 [get_iobanks 34]
         // --- MAIN BUILD PIPELINE ---
         document.getElementById('btn-build').onclick = async () => {
             try {
+                const pipelineStart = performance.now();
                 const baseUrl = new URL('./', import.meta.url).href;
                 document.getElementById('btn-build').disabled = true;
                 document.getElementById('btn-dl-frames').disabled = true;
@@ -507,6 +535,7 @@ set_property INTERNAL_VREF 0.675 [get_iobanks 34]
                 }
 
                 log(`\n--- SYNTHESIZING: ${topModule} ---`, 'warn');
+                const tYosys = performance.now();
                 const synthWorker = spawnYosysWorker();
                 jsonBuffer = await new Promise((resolve, reject) => {
                     synthWorker.onmessage = (e) => {
@@ -517,15 +546,20 @@ set_property INTERNAL_VREF 0.675 [get_iobanks 34]
                     synthWorker.postMessage({ topModule, verilogFiles: verilogPayload });
                 });
                 synthWorker.terminate();
+                log(`[TELEMETRY] Yosys Synthesis took ${(performance.now() - tYosys).toFixed(2)}ms. Netlist payload: ${jsonBuffer.byteLength} bytes.`, 'info');
 
-                log(`[MAIN] Netlist ready. Spawning P&R...`, 'warn');
-                const [dbRaw, wasmRes, brotli] = await Promise.all([
+                log(`\n--- PLACE & ROUTE (NEXTPNR) ---`, 'warn');
+                const tFetchDb = performance.now();
+                const [dbRaw, wasmRaw, brotli] = await Promise.all([
                     fetch(`./${ENGINE_ASSETS.chipdb}`).then(r => r.arrayBuffer()),
                     fetch(`./${ENGINE_ASSETS.wasm}`).then(r => r.arrayBuffer()),
                     brotliPromise
                 ]);
                 const dbDecomp = brotli.decompress(new Uint8Array(dbRaw)).buffer;
+                const wasmDecomp = brotli.decompress(new Uint8Array(wasmRaw)).buffer; // DECOMPRESS NEXTPNR WASM
+                log(`[TELEMETRY] DB & Engine Fetch/Decompress took ${(performance.now() - tFetchDb).toFixed(2)}ms. Unpacked DB: ${(dbDecomp.byteLength/1024/1024).toFixed(2)} MB, Engine: ${(wasmDecomp.byteLength/1024/1024).toFixed(2)} MB`, 'info');
 
+                const tPnr = performance.now();
                 const pnrWorker = await spawnWorker('./pnr-worker.js');
                 await new Promise((resolve, reject) => {
                     pnrWorker.onmessage = (e) => {
@@ -533,41 +567,68 @@ set_property INTERNAL_VREF 0.675 [get_iobanks 34]
                         else if (e.data.type === 'fasm_fixed') { pipelineState.fasmStr = e.data.data; resolve(); }
                         else if (e.data.type === 'error') reject(e.data.message);
                     };
-                    pnrWorker.postMessage({ baseUrl: new URL('./', import.meta.url).href, type: 'run', top: topModule, wasmBuffer: wasmRes, chipdbBuffer: dbDecomp, jsonBuffer, xdc: xdcString }, [wasmRes, dbDecomp, jsonBuffer]);
+                    pnrWorker.postMessage({ baseUrl: new URL('./', import.meta.url).href, type: 'run', top: topModule, wasmBuffer: wasmDecomp, chipdbBuffer: dbDecomp, jsonBuffer, xdc: xdcString }, [wasmDecomp, dbDecomp, jsonBuffer]);
                 });
                 pnrWorker.terminate();
+                log(`[TELEMETRY] NextPNR Execution took ${(performance.now() - tPnr).toFixed(2)}ms. FASM output: ${pipelineState.fasmStr.length} characters.`, 'info');
 
                 log(`\n--- ASSEMBLING BITSTREAM ---`, 'warn');
-                const mapRaw = await fetch(`./${ENGINE_ASSETS.fasmMap}`).then(r => r.arrayBuffer());
-                const map = JSON.parse(new TextDecoder().decode(brotli.decompress(new Uint8Array(mapRaw))));
+                
 
-                const fasmWorker = await spawnWorker('./fasm2frames.js');
+                const tFetchMap = performance.now();
+                log(`[F2F] Fetching FASM Map...`, 'info');
+                const mapRaw = await fetch(`./${ENGINE_ASSETS.fasmMap}`).then(r => r.arrayBuffer());
+                
+                log(`[F2F] Decompressing ${mapRaw.byteLength} bytes of Brotli data (Warning: If it crashes here, map is too large)...`, 'warn');
+                const decompressedMapRaw = brotli.decompress(new Uint8Array(mapRaw));
+                
+                log(`[F2F] Parsing ${(decompressedMapRaw.byteLength / 1024 / 1024).toFixed(2)} MB of JSON into RAM...`, 'info');
+                const map = JSON.parse(new TextDecoder().decode(decompressedMapRaw));
+                
+                log(`[F2F] Map loaded successfully.`, 'info');
+
+
+                log(`[TELEMETRY] FASM Map load took ${(performance.now() - tFetchMap).toFixed(2)}ms. Map payload: ${(decompressedMapRaw.byteLength/1024/1024).toFixed(2)} MB unpacked.`, 'info');
+
+                const tF2F = performance.now();
+                const fasmWorker = await spawnWorker('./fasm2frames2.js');
                 const frames = await new Promise((res, rej) => {
                     fasmWorker.onmessage = e => {
-                        if (e.data.type === 'success') { log(`[F2F] ${e.data.telemetry}`); res(e.data.frames); }
-                        else rej(e.data.message);
+                        if (e.data.type === 'log') log(e.data.text);
+                        else if (e.data.type === 'success') { log(`[F2F] ${e.data.telemetry}`); res(e.data.frames); }
+                        else if (e.data.type === 'error') rej(e.data.message);
                     };
                     fasmWorker.postMessage({ fasmStr: pipelineState.fasmStr, mapData: map });
                 });
                 fasmWorker.terminate();
                 pipelineState.framesStr = frames;
+                log(`[TELEMETRY] FASM2Frames Translation took ${(performance.now() - tF2F).toFixed(2)}ms.`, 'info');
 
+                const tF2B = performance.now();
                 const partYaml = await fetch(baseUrl + ENGINE_ASSETS.yaml).then(r => r.text());
-                const framesWasm = await fetch(baseUrl + 'xc7frames2bit.wasm').then(r => r.arrayBuffer());
+                
+                // FETCH AND DECOMPRESS F2B WASM
+                const framesWasmRaw = await fetch(baseUrl + ENGINE_ASSETS.framesWasm).then(r => r.arrayBuffer());
+                const framesWasmDecomp = brotli.decompress(new Uint8Array(framesWasmRaw)).buffer;
+                
                 const framesWorker = await spawnWorker(baseUrl + 'frames-worker.js');
+
 
                 const bitstream = await new Promise((res, rej) => {
                     framesWorker.onmessage = e => {
-                        if (e.data.type === 'success') res(e.data.bitstream);
+                        if (e.data.type === 'log') log(`[F2B] ${e.data.text}`);
+                        else if (e.data.type === 'success') res(e.data.bitstream);
                         else if (e.data.type === 'error') rej(e.data.message);
                     };
-                    framesWorker.postMessage({ type: 'run', baseUrl: baseUrl, partYaml: partYaml, framesStr: frames, wasmBuffer: framesWasm }, [framesWasm]);
+                    framesWorker.postMessage({ type: 'run', baseUrl: baseUrl, partYaml: partYaml, framesStr: frames, wasmBuffer: framesWasmDecomp }, [framesWasmDecomp]);
                 });
+
                 framesWorker.terminate();
                 pipelineState.bitstream = bitstream;
-
-                log(`[DEBUG] Bitstream size: ${bitstream.length} bytes`);
-                log(`✅ BUILD SUCCESSFUL. Ready to Flash.`, 'warn');
+                
+                const totalTime = ((performance.now() - pipelineStart) / 1000).toFixed(2);
+                log(`[TELEMETRY] Frames2Bit Compilation took ${(performance.now() - tF2B).toFixed(2)}ms. Resulting .bit: ${bitstream.length} bytes.`, 'info');
+                log(`✅ BUILD SUCCESSFUL in ${totalTime}s. Ready to Flash.`, 'warn');
                 
                 document.getElementById('btn-dl-frames').disabled = false;
                 document.getElementById('btn-dl-bit').disabled = false;
@@ -587,7 +648,7 @@ set_property INTERNAL_VREF 0.675 [get_iobanks 34]
                 await jtag.init(30000000);
                 const idcode = await jtag.readIDCODE();
                 log(`[USB] IDCODE: 0x${idcode.toString(16).toUpperCase()}`);
-                if (idcode !== ENGINE_ASSETS.idcode) log(`[WARN] Silicon mismatch! Expected 0x${ENGINE_ASSETS.idcode.toString(16).toUpperCase()}`);
+                if (idcode !== ENGINE_ASSETS.idcode) log(`[WARN] Silicon mismatch! Expected 0x${ENGINE_ASSETS.idcode.toString(16).toUpperCase()}`, 'warn');
                 await jtag.programXC7(pipelineState.bitstream);
                 log("⚡ HARDWARE FLASHED SUCCESSFULLY!", 'warn');
             } catch(err) { log(`[FLASH FATAL] ${err}`, 'error'); }
@@ -616,27 +677,18 @@ set_property INTERNAL_VREF 0.675 [get_iobanks 34]
         // --- GRACEFUL TEARDOWN (QoL) ---
         window.addEventListener('beforeunload', (e) => {
             log(`[SYSTEM] Tab closing, cleaning up hardware locks...`, 'warn');
-            
-            // 1. Release UART if open
             if (uart && uart.port) {
-                // We don't await here because the browser won't wait for async operations on close
                 uart.keepReading = false; 
                 uart.port.close().catch(() => {}); 
             }
-            
-            // 2. Release BLE if open
             if (ble && ble.device && ble.device.gatt.connected) {
                 ble.disconnect();
             }
-
-            // Note: The JTAG flasher (WebUSB) opens and closes its interface per-flash. 
-            // It doesn't hold a persistent background lock like UART/BLE, so it relies 
-            // on the browser's native USB release mechanism on tab close.
         });
-        // Initialization
+        
         window.onload = () => {
             loadState();
-            checkHardwareStatus(); // Run initial USB probe
+            checkHardwareStatus(); 
         };
 
     </script>
