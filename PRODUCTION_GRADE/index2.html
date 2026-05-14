@@ -66,26 +66,15 @@
                 <h3>Verilog Source (.v)</h3>
                 <textarea id="code-verilog" spellcheck="false">
 module top (
-    input  logic       clk,
-    output logic [2:0] LED   // Now restricted to 3 bits: 0, 1, and 2
+    input  logic        clk,
+    output logic [15:0] LED
 );
-    // 25-bit divider for a visible blink rate (~1.5Hz at 50MHz)
-    logic [24:0] divider; 
-
-    // Initialize to a "checkerboard" pattern: 101
-    // LED[0] = ON, LED[1] = OFF, LED[2] = ON
-    initial begin
-        LED = 3'b101; 
-    end
-
+    logic [15:0] divider;
     always_ff @(posedge clk) begin
-        divider <= divider + 1;
-
-        if (divider == 0) begin 
-            // This flips all three bits simultaneously.
-            // 101 becomes 010, and 010 becomes 101.
-            LED <= ~LED;
-        end
+       divider <= divider + 1;
+       if (divider == 0) begin 
+            LED <= LED + 1;
+       end
     end
 endmodule
                 </textarea>
@@ -94,12 +83,12 @@ endmodule
                 <h3>Urbana Constraints (.xdc)</h3>
                 <textarea id="code-xdc" spellcheck="false" style="color: #9cdcfe;">
 # URBANA BOARD CONSTRAINTS
-# URBANA BOARD CONSTRAINTS
 set_property -dict {PACKAGE_PIN N15 IOSTANDARD LVCMOS33} [get_ports {clk}]
-# On-board LEDs (Cylon Scanner)
+set_property CFGBVS VCCO [current_design]
+set_property CONFIG_VOLTAGE 3.3 [current_design]
+set_property BITSTREAM.Config.SPI_buswidth 4 [current_design]
 set_property -dict {PACKAGE_PIN C13 IOSTANDARD LVCMOS33} [get_ports {LED[0]}]
-set_property -dict {PACKAGE_PIN C14 IOSTANDARD LVCMOS33} [get_ports {LED[1]}]
-set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
+set_property INTERNAL_VREF 0.675 [get_iobanks 34]
                 </textarea>
             </div>
         </div>
@@ -215,11 +204,10 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
         ];
 
         // --- RIGOROUS LOGGING ENGINE ---
-
         function log(msg, cls = '') {
-            const time = new Date().toISOString().substring(11, 23);
+            const time = new Date().toISOString().substring(11, 23); // HH:MM:SS.mmm
             const textStr = `[${time}] ${msg}`;
-
+            
             if (cls === 'error') console.error(textStr);
             else if (cls === 'warn') console.warn(textStr);
             else if (cls === 'info') console.info(textStr);
@@ -229,12 +217,6 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
             span.textContent = textStr + '\n';
             if (cls) span.className = cls;
             logEl.appendChild(span);
-
-            // Trim oldest entries to keep DOM size bounded
-            while (logEl.childNodes.length > 500) {
-                logEl.removeChild(logEl.firstChild);
-            }
-
             logEl.scrollTop = logEl.scrollHeight;
         }
 
