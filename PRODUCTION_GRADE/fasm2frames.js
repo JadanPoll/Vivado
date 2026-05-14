@@ -6,6 +6,18 @@ self.onmessage = async function(e) {
         const frameData = new Map();
         const { types: typesMap, grid: gridMap } = mapData;
         
+
+        // --- RIGOROUS DEBUG TRACKERS ---
+        const debugLog = (msg) => self.postMessage({ type: 'log', text: `[F2F-DEBUG] ${msg}` });
+        const missingTiles = new Map();
+        const missingFeatures = new Map();
+        let totalFasmLines = 0;
+        let multiBitExpansions = 0;
+        
+
+                debugLog("FASM INPUT:\n" + fasmStr);
+        debugLog("Initializing FASM-to-Frames pipeline...");
+
         // Derive complete address space from map grid — portable to any XC7 device
         const allAddresses = new Set();
         for (const [tileName, [bases, tileType]] of Object.entries(gridMap)) {
@@ -16,13 +28,15 @@ self.onmessage = async function(e) {
             }
         }
         const sortedAddresses = Array.from(allAddresses).sort((a, b) => a - b);
+        debugLog(`Allocated address space: ${sortedAddresses.length} dense frames.`);
 
         const lines = fasmStr.split('\n');
-        let parsedCount = 0, unmappedCount = 0, unmappedSample = "";
+        let parsedCount = 0, unmappedCount = 0;
 
         for (let line of lines) {
             line = line.trim();
             if (!line || line.startsWith('#')) continue;
+            totalFasmLines++;
 
             const eqIdx = line.indexOf('=');
             const left = (eqIdx === -1) ? line : line.substring(0, eqIdx).trim();
@@ -34,20 +48,29 @@ self.onmessage = async function(e) {
 
             if (!gridEntry) { 
                 unmappedCount++; 
-                unmappedSample = tileName; 
+                missingTiles.set(tileName, (missingTiles.get(tileName) || 0) + 1);
                 continue; 
             }
 
             const [bases, tileType] = gridEntry;
             const typeFeatures = typesMap[tileType];
-            if (!typeFeatures) continue;
+            
+            if (!typeFeatures) {
+                // If the tile exists but the type isn't in our feature map
+                unmappedCount++;
+                const missingKey = `[MISSING_TILE_TYPE] ${tileType} (from ${tileName})`;
+                missingFeatures.set(missingKey, (missingFeatures.get(missingKey) || 0) + 1);
+                continue;
+            }
 
             const rawFeatures = [];
             // Handle [63:0] bitstream expansions
             if (right && right.includes("'b")) {
+                multiBitExpansions++;
                 const featureFull = parts.slice(1).join('.');
                 const bracketIdx = featureFull.indexOf('[');
                 const featureBase = featureFull.substring(0, bracketIdx);
+                
                 // Regex to extract indices from [63:0]
                 const rangeMatch = featureFull.match(/\[(\d+):(\d+)\]/);
                 if (rangeMatch) {
@@ -64,7 +87,6 @@ self.onmessage = async function(e) {
             }
 
             for (const feat of rawFeatures) {
-                parsedCount++;
                 let coords = null;
                 const subParts = feat.split('.');
 
@@ -100,10 +122,13 @@ self.onmessage = async function(e) {
 
                 if (!coords) { 
                     unmappedCount++; 
-                    unmappedSample = feat; 
+                    // Track exactly what type and feature failed so we can check the Python script
+                    const missingKey = `${tileType} :: ${feat}`;
+                    missingFeatures.set(missingKey, (missingFeatures.get(missingKey) || 0) + 1);
                     continue; 
                 }
 
+                parsedCount++;
                 // Apply the bit to the frame map
                 const coordList = Array.isArray(coords[0]) ? coords : [coords];
                 for (const [blockName, wordCol, wordIdx, bitIdx] of coordList) {
@@ -121,6 +146,24 @@ self.onmessage = async function(e) {
             }
         }
 
+        // --- RIGOROUS DEBUG REPORT GENERATION ---
+        debugLog(`Parse complete. Generating telemetry...`);
+        debugLog(`Valid FASM lines parsed: ${totalFasmLines}`);
+        debugLog(`Multi-bit [63:0] expansions fired: ${multiBitExpansions}`);
+
+        if (missingTiles.size > 0) {
+            debugLog(`\n--- TOP 10 MISSING TILES ---`);
+            const sortedTiles = [...missingTiles.entries()].sort((a,b) => b[1] - a[1]).slice(0, 10);
+            sortedTiles.forEach(([t, c]) => debugLog(`  ${t} (Occurrences: ${c})`));
+        }
+
+        if (missingFeatures.size > 0) {
+            debugLog(`\n--- TOP 20 MISSING FEATURES ---`);
+            debugLog(`(Format: TILE_TYPE :: FEATURE_PATH)`);
+            const sortedFeats = [...missingFeatures.entries()].sort((a,b) => b[1] - a[1]).slice(0, 20);
+            sortedFeats.forEach(([f, c]) => debugLog(`  ${f} (Occurrences: ${c})`));
+        }
+
         // Generate output in PrjXray .frames format
         let outputStr = "";
         for (const addr of sortedAddresses) {
@@ -132,6 +175,13 @@ self.onmessage = async function(e) {
             outputStr += '0x' + addr.toString(16).padStart(8, '0') + ' ' + wordStrs.join(',') + '\n';
         }
         
+
+        let nonZeroFrames = 0;
+        for (const addr of sortedAddresses) {
+            const words = frameData.get(addr);
+            if (words) nonZeroFrames++;
+        }
+        debugLog("Non-zero frames: " + nonZeroFrames);
         self.postMessage({ 
             type: 'success', 
             frames: outputStr,
@@ -139,6 +189,7 @@ self.onmessage = async function(e) {
         });
 
     } catch (err) { 
-        self.postMessage({ type: 'error', message: err.toString() }); 
+        // Send back full stack traces if the worker hits a logic error
+        self.postMessage({ type: 'error', message: `${err.toString()}\n${err.stack}` }); 
     }
 };
