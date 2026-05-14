@@ -1,3 +1,117 @@
+#!/bin/bash
+set -e
+
+# ============================
+# 0. Environment
+# ============================
+source /home/codespace/emsdk/emsdk_env.sh
+cd /workspaces/nextpnr-xilinx
+
+# ============================
+# 1. Spartan7 metadata symlink
+# ============================
+ln -sf xilinx/external/nextpnr-xilinx-meta/artix7 \
+       xilinx/external/nextpnr-xilinx-meta/spartan7
+
+# ============================
+# 2. extern "C" for main (idempotent)
+# ============================
+sed -i 's/^int main(/extern "C" int main(/' xilinx/main.cc
+
+# ============================
+# 3. Build Boost 1.83.0 for WASM (only if not already present)
+# ============================
+if [ ! -d "/workspaces/nextpnr-xilinx/build-wasm/boost-wasm/lib" ]; then
+    cd ~/boost_1_83_0
+    ./b2 toolset=emscripten variant=release link=static threading=single \
+      target-os=linux \
+      --prefix=/workspaces/nextpnr-xilinx/build-wasm/boost-wasm \
+      -j$(nproc) install
+    cd /workspaces/nextpnr-xilinx
+fi
+
+# ============================
+# 4. Fake CMake modules
+# ============================
+rm -rf build-wasm
+mkdir -p build-wasm/cmake-fakes
+
+cat > build-wasm/cmake-fakes/FindBoost.cmake <<'EOF'
+set(BOOST_LIB /workspaces/nextpnr-xilinx/build-wasm/boost-wasm/lib)
+set(Boost_FOUND TRUE)
+set(Boost_INCLUDE_DIRS /workspaces/nextpnr-xilinx/build-wasm/boost-wasm/include)
+set(Boost_LIBRARY_DIRS ${BOOST_LIB})
+foreach(lib filesystem program_options iostreams system)
+    string(TOUPPER ${lib} LIB)
+    set(Boost_${LIB}_LIBRARY ${BOOST_LIB}/libboost_${lib}.a)
+    set(Boost_${LIB}_LIBRARY_RELEASE ${BOOST_LIB}/libboost_${lib}.a)
+    list(APPEND Boost_LIBRARIES ${BOOST_LIB}/libboost_${lib}.a)
+endforeach()
+set(Boost_VERSION "1.83.0")
+set(Boost_VERSION_STRING "1.83.0")
+EOF
+
+cat > build-wasm/cmake-fakes/FindPython3.cmake <<'EOF'
+set(Python3_FOUND TRUE)
+set(Python3_Interpreter_FOUND TRUE)
+set(Python3_EXECUTABLE /home/codespace/.python/current/bin/python3)
+set(Python3_INCLUDE_DIRS "")
+set(Python3_LIBRARIES "")
+set(Python3_VERSION "3.12.1")
+EOF
+
+cat > build-wasm/cmake-fakes/FindEigen3.cmake <<'EOF'
+set(Eigen3_FOUND TRUE)
+set(EIGEN3_FOUND TRUE)
+set(EIGEN3_INCLUDE_DIR /usr/include/eigen3)
+if(NOT TARGET Eigen3::Eigen)
+    add_library(Eigen3::Eigen INTERFACE IMPORTED)
+    set_target_properties(Eigen3::Eigen PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES /usr/include/eigen3)
+endif()
+EOF
+
+# ============================
+# 5. CMake configuration
+#   - NO memcpy flag (we'll stub it in JS)
+# ============================
+emcmake cmake \
+  -S /workspaces/nextpnr-xilinx \
+  -B /workspaces/nextpnr-xilinx/build-wasm \
+  -DARCH=xilinx \
+  -DWITH_PYTHON=OFF \
+  -DBUILD_PYTHON=OFF \
+  -DBUILD_TESTS=OFF \
+  -DBBA_IMPORT=/workspaces/nextpnr-xilinx/bba-export.cmake \
+  -DCMAKE_MODULE_PATH=/workspaces/nextpnr-xilinx/build-wasm/cmake-fakes \
+  -DBoost_NO_BOOST_CMAKE=ON \
+  -DEigen3_DIR=/home/codespace/emsdk/upstream/emscripten/cache/sysroot/lib/cmake/Eigen3 \
+  -DCMAKE_CXX_FLAGS="-Os -g0 -msimd128 -mbulk-memory -mnontrapping-fptoint -DNPNR_DISABLE_THREADS" \
+  -DCMAKE_EXE_LINKER_FLAGS="-Os -msimd128 -mbulk-memory -mnontrapping-fptoint \
+    -s ALLOW_MEMORY_GROWTH=1 -s MAXIMUM_MEMORY=4gb -s INITIAL_MEMORY=268435456 \
+    -s MALLOC=emmalloc -s ASSERTIONS=0 -s ENVIRONMENT=worker \
+    -s EXPORTED_FUNCTIONS=[_main] -s EXIT_RUNTIME=0 \
+    -Wl,-allow-multiple-definition" \
+  -DCMAKE_CXX_FLAGS_RELEASE="" \
+  -DCMAKE_BUILD_TYPE=Release
+
+# ============================
+# 6. Build
+# ============================
+make -j$(nproc) -C build-wasm
+
+# ============================
+# 7. Optimize & compress
+# ============================
+/home/codespace/emsdk/upstream/bin/wasm-opt \
+  -Oz --enable-simd --enable-bulk-memory --enable-nontrapping-float-to-int \
+  --enable-sign-ext --enable-mutable-globals --strip-debug --strip-producers \
+  build-wasm/nextpnr-xilinx.wasm -o build-wasm/nextpnr-xilinx.opt.wasm
+
+brotli --best build-wasm/nextpnr-xilinx.opt.wasm -o build-wasm/nextpnr-xilinx.opt.wasm.br
+
+echo "✅ Build complete. Optimized WASM: build-wasm/nextpnr-xilinx.opt.wasm.br"
+
 # Browser-Native XC7S50 Toolchain: 0-to-Hero Manifest
 
 ## Overview
