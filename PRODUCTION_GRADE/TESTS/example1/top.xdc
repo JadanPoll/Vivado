@@ -1,7 +1,6 @@
 # URBANA BOARD — LED Rings + Clocking
 set_property -dict {PACKAGE_PIN N15 IOSTANDARD LVCMOS33} [get_ports clk]
 create_clock -period 10.000 -name sys_clk [get_ports clk]
-set_property LOC BUFGCTRL_X0Y1 [get_cells u_bufgce]
 
 set_property -dict {PACKAGE_PIN J2 IOSTANDARD LVCMOS25} [get_ports {BTN[0]}]
 set_property -dict {PACKAGE_PIN J1 IOSTANDARD LVCMOS25} [get_ports {BTN[1]}]
