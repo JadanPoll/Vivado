@@ -3,12 +3,12 @@ set_property -dict {PACKAGE_PIN N15 IOSTANDARD LVCMOS33} [get_ports clk]
 create_clock -period 10.000 -name sys_clk [get_ports clk]
 
 # UART (USB-UART chip side)
-set_property -dict {PACKAGE_PIN B16 IOSTANDARD LVCMOS33} [get_ports UART_TXD]
-set_property -dict {PACKAGE_PIN A16 IOSTANDARD LVCMOS33} [get_ports UART_RXD]
+set_property -dict {PACKAGE_PIN B16 IOSTANDARD LVCMOS33} [get_ports UART_RXD]
+set_property -dict {PACKAGE_PIN A16 IOSTANDARD LVCMOS33} [get_ports UART_TXD]
 
 # BLE chip side
-set_property -dict {PACKAGE_PIN G15 IOSTANDARD LVCMOS33} [get_ports BLE_UART_TXD]
 set_property -dict {PACKAGE_PIN E13 IOSTANDARD LVCMOS33} [get_ports BLE_UART_RXD]
+set_property -dict {PACKAGE_PIN G15 IOSTANDARD LVCMOS33} [get_ports BLE_UART_TXD]
 
 # Activity LEDs
 set_property -dict {PACKAGE_PIN C13 IOSTANDARD LVCMOS33} [get_ports {LED[0]}]
