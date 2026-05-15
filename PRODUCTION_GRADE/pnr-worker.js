@@ -39,22 +39,31 @@ function runNextpnr(msg) {
 
     let cleanedJsonStr = new TextDecoder().decode(new Uint8Array(msg.jsonBuffer)); // fallback: raw
 
-
     try {
-        const jsonStr   = new TextDecoder().decode(new Uint8Array(msg.jsonBuffer));
-        const netlist   = JSON.parse(jsonStr);
+        const netlist   = JSON.parse(cleanedJsonStr);
 
 
     // Strip $scopeinfo cells — nextpnr-xilinx has no placer entry for them
+
+    // Count BEFORE scrub
+    let scopeInfoCount = 0;
     for (const modName in netlist.modules) {
         const cells = netlist.modules[modName].cells;
         for (const cellName in cells) {
-            if (cells[cellName].type === '$scopeinfo') {
-                delete cells[cellName];
-            }
+            if (cells[cellName].type === '$scopeinfo') scopeInfoCount++;
+        }
+    }
+
+    // Now scrub
+    for (const modName in netlist.modules) {
+        const cells = netlist.modules[modName].cells;
+        for (const cellName in cells) {
+            if (cells[cellName].type === '$scopeinfo') delete cells[cellName];
         }
     }
     cleanedJsonStr = JSON.stringify(netlist);
+
+    self.postMessage({ type: 'log', text: `[PNR] Scrubbed ${scopeInfoCount} $scopeinfo cell(s) from netlist.` });
 
     const validPorts = new Set();
 

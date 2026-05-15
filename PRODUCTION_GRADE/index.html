@@ -94,7 +94,6 @@ endmodule
                 <h3>Urbana Constraints (.xdc)</h3>
                 <textarea id="code-xdc" spellcheck="false" style="color: #9cdcfe;">
 # URBANA BOARD CONSTRAINTS
-# URBANA BOARD CONSTRAINTS
 set_property -dict {PACKAGE_PIN N15 IOSTANDARD LVCMOS33} [get_ports {clk}]
 # On-board LEDs (Cylon Scanner)
 set_property -dict {PACKAGE_PIN C13 IOSTANDARD LVCMOS33} [get_ports {LED[0]}]
@@ -175,6 +174,113 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
     <script type="module">
         import brotliPromise from 'https://cdn.jsdelivr.net/npm/brotli-dec-wasm@2.3.2/index.js';
 
+
+
+        const _cache   = {};   // key → Promise<value>  (inflight dedup + settled cache)
+
+        // -----------------------------------------------------------------------------
+        // Internal loaders — one per asset type
+        // -----------------------------------------------------------------------------
+
+        async function _loadBrotliBuffer(url, brotli, label, log) {
+            log(`[CACHE] Fetching ${label}...`, 'info');
+            const t0  = performance.now();
+            const raw = await fetch(url).then(r => {
+                if (!r.ok) throw new Error(`HTTP ${r.status} fetching ${url}`);
+                return r.arrayBuffer();
+            });
+            const dec = brotli.decompress(new Uint8Array(raw)).buffer;
+            log(`[CACHE] ${label} ready in ${(performance.now()-t0).toFixed(0)}ms — ${(dec.byteLength/1024/1024).toFixed(2)} MB`, 'info');
+            return dec;
+        }
+
+        async function _loadBrotliJson(url, brotli, label, log) {
+            log(`[CACHE] Fetching ${label}...`, 'info');
+            const t0  = performance.now();
+            const raw = await fetch(url).then(r => {
+                if (!r.ok) throw new Error(`HTTP ${r.status} fetching ${url}`);
+                return r.arrayBuffer();
+            });
+            const dec  = brotli.decompress(new Uint8Array(raw));
+            const obj  = JSON.parse(new TextDecoder().decode(dec));
+            log(`[CACHE] ${label} ready in ${(performance.now()-t0).toFixed(0)}ms — ${(dec.byteLength/1024/1024).toFixed(2)} MB JSON`, 'info');
+            return obj;
+        }
+
+        async function _loadText(url, label, log) {
+            log(`[CACHE] Fetching ${label}...`, 'info');
+            const t0  = performance.now();
+            const txt = await fetch(url).then(r => {
+                if (!r.ok) throw new Error(`HTTP ${r.status} fetching ${url}`);
+                return r.text();
+            });
+            log(`[CACHE] ${label} ready in ${(performance.now()-t0).toFixed(0)}ms`, 'info');
+            return txt;
+        }
+
+        // -----------------------------------------------------------------------------
+        // Public API
+        // -----------------------------------------------------------------------------
+
+        const assetCache = {
+            /**
+             * Get a cached asset, loading it on first call.
+             *
+             * @param {string} key          - 'chipdb' | 'wasm' | 'framesWasm' | 'fasmMap' | 'yaml'
+             * @param {object} brotli       - brotli-dec-wasm instance
+             * @param {object} ENGINE_ASSETS - the asset manifest from the main page
+             * @param {function} log        - the page's log() function
+             * @returns {Promise<ArrayBuffer|object|string>}
+             */
+            async get(key, brotli, ENGINE_ASSETS, log) {
+                if (_cache[key]) return _cache[key];   // return the same Promise (dedup inflight)
+
+                switch (key) {
+                    case 'chipdb':
+                        _cache[key] = _loadBrotliBuffer(assetUrl(ENGINE_ASSETS.chipdb), brotli, 'ChipDB', log);
+                        break;
+                    case 'wasm':
+                        _cache[key] = _loadBrotliBuffer(assetUrl(ENGINE_ASSETS.wasm), brotli, 'NextPNR WASM', log);
+                        break;
+                    case 'framesWasm':
+                        _cache[key] = _loadBrotliBuffer(assetUrl(ENGINE_ASSETS.framesWasm), brotli, 'Frames2Bit WASM', log);
+                        break;
+                    case 'fasmMap':
+                        _cache[key] = _loadBrotliJson(assetUrl(ENGINE_ASSETS.fasmMap), brotli, 'FASM Map', log);
+                        break;
+                    case 'yaml':
+                        _cache[key] = _loadText(assetUrl(ENGINE_ASSETS.yaml), 'Part YAML', log);
+                        break;
+                    default:
+                        throw new Error(`[CACHE] Unknown asset key: "${key}"`);
+                }
+
+                return _cache[key];
+            },
+
+            /**
+             * Pre-warm all assets in parallel.  Call this on page load so the first
+             * Build click doesn't pay the fetch cost.
+             */
+            async warmup(brotli, ENGINE_ASSETS, log) {
+                log('[CACHE] Pre-warming pipeline assets in background...', 'info');
+                await Promise.all([
+                    this.get('chipdb',     brotli, ENGINE_ASSETS, log),
+                    this.get('wasm',       brotli, ENGINE_ASSETS, log),
+                    this.get('framesWasm', brotli, ENGINE_ASSETS, log),
+                    this.get('fasmMap',    brotli, ENGINE_ASSETS, log),
+                    this.get('yaml',       brotli, ENGINE_ASSETS, log),
+                ]).catch(err => log(`[CACHE] Warmup error (non-fatal): ${err}`, 'warn'));
+                log('[CACHE] All assets warm.', 'info');
+            },
+
+            /** Manually invalidate a single key (e.g. if ENGINE_ASSETS changes). */
+            invalidate(key) { delete _cache[key]; },
+
+            /** Wipe everything. */
+            clear() { Object.keys(_cache).forEach(k => delete _cache[k]); }
+        };
+
         // --- ENVIRONMENT DETECTION ---
         const IS_DEV = location.hostname === 'localhost' || 
                        location.hostname === '127.0.0.1' ||
@@ -215,7 +321,6 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
         ];
 
         // --- RIGOROUS LOGGING ENGINE ---
-
         function log(msg, cls = '') {
             const time = new Date().toISOString().substring(11, 23);
             const textStr = `[${time}] ${msg}`;
@@ -230,7 +335,6 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
             if (cls) span.className = cls;
             logEl.appendChild(span);
 
-            // Trim oldest entries to keep DOM size bounded
             while (logEl.childNodes.length > 500) {
                 logEl.removeChild(logEl.firstChild);
             }
@@ -534,7 +638,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
             return new Worker(URL.createObjectURL(new Blob([yosysCode], { type: 'application/javascript' })), { type: 'module' });
         }
 
-        // --- MAIN BUILD PIPELINE ---
+        // --- MAIN BUILD PIPELINE (with assetCache) ---
         document.getElementById('btn-build').onclick = async () => {
             try {
                 const pipelineStart = performance.now();
@@ -543,6 +647,9 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                 document.getElementById('btn-dl-bit').disabled = true;
                 document.getElementById('btn-flash').disabled = true;
                 
+                // 🔧 FIX 1 & 2: Resolve brotliPromise once and pass the brotli instance to assetCache.get()
+                const brotli = await brotliPromise;
+
                 let topModule, xdcString, jsonBuffer;
                 let verilogPayload = {};
 
@@ -579,25 +686,36 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
 
                 log(`\n--- PLACE & ROUTE (NEXTPNR) ---`, 'warn');
                 const tFetchDb = performance.now();
-                const [dbRaw, wasmRaw, brotli] = await Promise.all([
-                    fetch(assetUrl(ENGINE_ASSETS.chipdb)).then(r => r.arrayBuffer()),
-                    fetch(assetUrl(ENGINE_ASSETS.wasm)).then(r => r.arrayBuffer()),
-                    brotliPromise
+                // ✅ Correct arguments: key (string) + brotli instance
+                const [dbDecomp, wasmDecomp] = await Promise.all([
+                    assetCache.get('chipdb', brotli, ENGINE_ASSETS, log),
+                    assetCache.get('wasm', brotli, ENGINE_ASSETS, log)
                 ]);
-                const dbDecomp = brotli.decompress(new Uint8Array(dbRaw)).buffer;
-                const wasmDecomp = brotli.decompress(new Uint8Array(wasmRaw)).buffer;
-                log(`[TELEMETRY] DB & Engine Fetch/Decompress took ${(performance.now() - tFetchDb).toFixed(2)}ms. Unpacked DB: ${(dbDecomp.byteLength/1024/1024).toFixed(2)} MB, Engine: ${(wasmDecomp.byteLength/1024/1024).toFixed(2)} MB`, 'info');
+                log(`[TELEMETRY] DB & Engine from cache in ${(performance.now() - tFetchDb).toFixed(2)}ms.`, 'info');
 
                 const tPnr = performance.now();
                 const pnrWorker = await spawnWorker('pnr-worker.js');
+
+                // 🔧 FIX 3: Clone buffers before transferring to workers so cache copies stay intact
+                const wasmClone = wasmDecomp.slice(0);          // cloned ArrayBuffer
+                const dbClone = dbDecomp.slice(0);
+
                 await new Promise((resolve, reject) => {
                     pnrWorker.onmessage = (e) => {
                         if (e.data.type === 'log') log(`[PNR] ${e.data.text}`);
                         else if (e.data.type === 'fasm_fixed') { pipelineState.fasmStr = e.data.data; resolve(); }
                         else if (e.data.type === 'error') reject(e.data.message);
                     };
-                    // Send base URL for nextpnr so it can load its own WASM/JS
-                    pnrWorker.postMessage({ baseUrl: IS_DEV ? baseUrl : CDN_BASE, type: 'run', top: topModule, wasmBuffer: wasmDecomp, chipdbBuffer: dbDecomp, jsonBuffer, xdc: xdcString }, [wasmDecomp, dbDecomp, jsonBuffer]);
+                    // Transfer the clones instead of the originals
+                    pnrWorker.postMessage({ 
+                        baseUrl: IS_DEV ? baseUrl : CDN_BASE, 
+                        type: 'run', 
+                        top: topModule, 
+                        wasmBuffer: wasmClone, 
+                        chipdbBuffer: dbClone, 
+                        jsonBuffer, 
+                        xdc: xdcString 
+                    }, [wasmClone, dbClone, jsonBuffer]);
                 });
                 pnrWorker.terminate();
                 log(`[TELEMETRY] NextPNR Execution took ${(performance.now() - tPnr).toFixed(2)}ms. FASM output: ${pipelineState.fasmStr.length} characters.`, 'info');
@@ -605,16 +723,9 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                 log(`\n--- ASSEMBLING BITSTREAM ---`, 'warn');
                 
                 const tFetchMap = performance.now();
-                log(`[F2F] Fetching FASM Map...`, 'info');
-                const mapRaw = await fetch(assetUrl(ENGINE_ASSETS.fasmMap)).then(r => r.arrayBuffer());
-                
-                log(`[F2F] Decompressing ${mapRaw.byteLength} bytes of Brotli data...`, 'warn');
-                const decompressedMapRaw = brotli.decompress(new Uint8Array(mapRaw));
-                
-                log(`[F2F] Parsing ${(decompressedMapRaw.byteLength / 1024 / 1024).toFixed(2)} MB of JSON into RAM...`, 'info');
-                const map = JSON.parse(new TextDecoder().decode(decompressedMapRaw));
-                log(`[F2F] Map loaded successfully.`, 'info');
-                log(`[TELEMETRY] FASM Map load took ${(performance.now() - tFetchMap).toFixed(2)}ms. Map payload: ${(decompressedMapRaw.byteLength/1024/1024).toFixed(2)} MB unpacked.`, 'info');
+                log(`[F2F] Fetching FASM Map from cache...`, 'info');
+                const map = await assetCache.get('fasmMap', brotli, ENGINE_ASSETS, log);
+                log(`[TELEMETRY] FASM Map loaded from cache in ${(performance.now() - tFetchMap).toFixed(2)}ms.`, 'info');
 
                 const tF2F = performance.now();
                 const fasmWorker = await spawnWorker('fasm2frames2.js');
@@ -631,13 +742,13 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                 log(`[TELEMETRY] FASM2Frames Translation took ${(performance.now() - tF2F).toFixed(2)}ms.`, 'info');
 
                 const tF2B = performance.now();
-                const partYaml = await fetch(assetUrl(ENGINE_ASSETS.yaml)).then(r => r.text());
-                
-                // FETCH AND DECOMPRESS F2B WASM
-                const framesWasmRaw = await fetch(assetUrl(ENGINE_ASSETS.framesWasm)).then(r => r.arrayBuffer());
-                const framesWasmDecomp = brotli.decompress(new Uint8Array(framesWasmRaw)).buffer;
+                const partYaml = await assetCache.get('yaml', brotli, ENGINE_ASSETS, log);
+                const framesWasmDecomp = await assetCache.get('framesWasm', brotli, ENGINE_ASSETS, log);
                 
                 const framesWorker = await spawnWorker('frames-worker.js');
+
+                // 🔧 FIX 3: Clone the frames wasm buffer before transfer
+                const framesWasmClone = framesWasmDecomp.slice(0);
 
                 const bitstream = await new Promise((res, rej) => {
                     framesWorker.onmessage = e => {
@@ -645,7 +756,13 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                         else if (e.data.type === 'success') res(e.data.bitstream);
                         else if (e.data.type === 'error') rej(e.data.message);
                     };
-                    framesWorker.postMessage({ type: 'run', baseUrl: IS_DEV ? baseUrl : CDN_BASE, partYaml: partYaml, framesStr: frames, wasmBuffer: framesWasmDecomp }, [framesWasmDecomp]);
+                    framesWorker.postMessage({ 
+                        type: 'run', 
+                        baseUrl: IS_DEV ? baseUrl : CDN_BASE, 
+                        partYaml: partYaml, 
+                        framesStr: frames, 
+                        wasmBuffer: framesWasmClone 
+                    }, [framesWasmClone]);
                 });
 
                 framesWorker.terminate();
@@ -712,7 +829,9 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
         
         window.onload = () => {
             loadState();
-            if(navigator.usb) checkHardwareStatus(); 
+            if(navigator.usb) checkHardwareStatus();
+            // 🔥 Pre-warm the asset cache in the background
+            brotliPromise.then(brotli => assetCache.warmup(brotli, ENGINE_ASSETS, log));
         };
 
     </script>
