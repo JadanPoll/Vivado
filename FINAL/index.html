@@ -41,13 +41,35 @@
         #serial-out { height: 180px; background: #000; color: #0f0; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 0.85rem; margin-bottom: 5px; border-radius: 4px; border: 1px solid #333; white-space: pre-wrap; }
         #serial-in { width: 100%; box-sizing: border-box; background: #000; color: #fff; border: 1px solid #333; padding: 10px; border-radius: 4px; font-family: monospace; }
         #hw-status { font-size: 0.9rem; font-weight: bold; padding: 5px 10px; border-radius: 4px; background: #333; }
+    /* Light workbench; compiler logs retain their familiar terminal appearance. */
+        body.light { background:#f5f7fb;color:#1f2937; }
+        body.light h2 { color:#13558c; }
+        body.light .panel { background:#fff;border-color:#d6dde7; }
+        body.light .panel h3 { color:#134d79;border-color:#d6dde7; }
+        body.light .form-group label { color:#334155; }
+        body.light .form-group input, body.light .form-group select,
+        body.light #workspace-board { background:#fff!important;color:#172033!important;border-color:#b8c3d2!important; }
+        body.light textarea { background:#fff;color:#24354a;border-color:#b8c3d2; }
+        body.light #serial-in {background:#fff;color:#1f2937;}
+        body.light .tabs {border-color:#d6dde7;}
+        body.light .tab {color:#475569;}
+        body.light .tab.active {color:#fff;}
+        body.light #log, body.light #serial-out {background:#101827;color:#baf59b;}
+        body.light .subtitle {color:#64748b;}
+        #workspace-recent {max-width:100%;font-size:.85rem;}
+        #build-history {font-size:.82rem;line-height:1.6;margin:8px 0;color:inherit;}
+        .layout-grip {resize:vertical;overflow:auto;min-height:140px;}
     </style>
     <script src="https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@c76cef5c7a0e6d9d1b0f8ae147eb0fe4c42b2c98/PRODUCTION_GRADE/ftdi-jtag.js"></script>
 </head>
 <body>
 
     <h2>⚡ ZeroLabs Web IDE</h2>
-    <div class="subtitle">Cloud-Native Build: jsDelivr Edge Network + Universal Console</div>
+    <div class="subtitle">Browser-native synthesis, bitstream generation and JTAG for RealDigital Urbana XC7S50</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <button id="theme-toggle" class="action-btn gray" style="padding:6px 10px;font-size:.85rem">Dark mode</button>
+        <span id="workbench-status" role="status" style="font-size:.85rem">Ready · No current bitstream</span>
+    </div>
     
     <div class="tabs">
         <button id="tab-editor" class="tab active">Live Editor (Auto-Synthesis)</button>
@@ -125,6 +147,9 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                 <button id="btn-discover" class="action-btn gray" type="button">Discover Project ↓</button>
                 <button id="btn-defaults" class="action-btn gray" type="button">Defaults</button>
                 <span id="discover-status" style="font-size: 0.8rem; align-self: center;"></span>
+                <label for="workspace-recent" style="font-size:.8rem">Recent</label>
+                <select id="workspace-recent"><option value="">Recent projects...</option></select>
+                <button id="workspace-reopen" class="action-btn gray" type="button">Reopen</button>
             </div>
             <div class="form-group" style="margin-top:12px"><label for="workspace-project">Project</label><select id="workspace-project" style="flex:1;padding:8px" disabled><option>Discover a repository</option></select></div>
             <div style="display: flex; gap: 15px; margin-top: 15px;">
@@ -175,7 +200,11 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
         <span id="hw-status">🔎 Checking Board...</span>
     </div>
     
-    <pre id="log">System Ready.\n</pre>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+        <strong>Live build output</strong><span id="build-stage" style="font-size:.82rem">Idle</span>
+    </div>
+    <div id="build-history" aria-label="Recent build durations"></div>
+    <pre id="log" class="layout-grip">System Ready.\n</pre>
 
     <div class="panel" style="margin-top: 15px;">
         <div class="panel-header">
@@ -321,6 +350,59 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
         const { UrbanaBLE } = await import(assetUrl('urbana-ble.js'));
 
         let activeMode = 'editor';
+        const statusElement = document.getElementById('workbench-status');
+        const stageElement = document.getElementById('build-stage');
+        function setWorkbenchStatus(status) { statusElement.textContent = status; }
+        const HISTORY_KEY = 'urbana-build-history-v1';
+        const RECENT_KEY = 'urbana-recent-projects-v1';
+        function savedJson(key, fallback) {
+            try { return JSON.parse(localStorage.getItem(key) || 'null') || fallback; }
+            catch (_) { return fallback; }
+        }
+        function renderHistory() {
+            const data = savedJson(HISTORY_KEY, []);
+            document.getElementById('build-history').textContent = data.length
+                ? 'Recent builds: ' + data.map(x => x.duration+'s ('+x.mode+')').join('  ·  ')
+                : 'No builds recorded yet';
+        }
+        function recordBuild(duration) {
+            const history = savedJson(HISTORY_KEY, []);
+            history.unshift({duration,mode:activeMode,date:new Date().toISOString()});
+            try { localStorage.setItem(HISTORY_KEY,JSON.stringify(history.slice(0,6))); } catch(_) {}
+            renderHistory();
+        }
+        function rememberProject(identity) {
+            const records = savedJson(RECENT_KEY, []).filter(x=>x.identity!==identity);
+            records.unshift({identity,url:document.getElementById('cfg-base').value,
+                folder:document.getElementById('workspace-project').value});
+            try { localStorage.setItem(RECENT_KEY, JSON.stringify(records.slice(0,12))); } catch(_) {}
+            renderRecent();
+        }
+        function renderRecent() {
+            const select = document.getElementById('workspace-recent');
+            const entries = savedJson(RECENT_KEY, []);
+            select.replaceChildren();
+            select.add(new Option('Recent projects...', ''));
+            entries.forEach((e,i)=>select.add(new Option(e.folder||e.url, String(i))));
+        }
+        document.getElementById('workspace-reopen').onclick = async () => {
+            const entries=savedJson(RECENT_KEY,[]);
+            const record=entries[Number(document.getElementById('workspace-recent').value)];
+            if(!record) return;
+            document.getElementById('cfg-base').value=record.url;
+            await document.getElementById('btn-discover').click();
+            const select=document.getElementById('workspace-project');
+            if([...select.options].some(x=>x.value===record.folder)) {
+                select.value=record.folder;
+                await loadSelectedWorkspace(record.folder);
+            }
+        };
+        document.getElementById('theme-toggle').onclick=()=>{
+            const light=!document.body.classList.contains('light');
+            document.body.classList.toggle('light',light);
+            document.getElementById('theme-toggle').textContent=light?'Dark mode':'Light mode';
+            try{localStorage.setItem('urbana-light-mode',light?'1':'0')}catch(_){}
+        };
         let pipelineState = { fasmStr: null, framesStr: null, bitstream: null };
         let remoteVerilogFiles = {};
         let activeRepoVFile = null;
@@ -640,6 +722,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
             document.getElementById('cfg-v-files').value = Object.keys(files).filter(k => workspaceMembers[k] !== false).join(', ');
             renderWorkspaceUI();
             saveState();
+            rememberProject(identity);
         }
         async function githubProject(input) {
             const u = new URL(input);
@@ -977,6 +1060,8 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                     expectedFiles.forEach(f => { verilogPayload[f] = remoteVerilogFiles[f]; });
                 }
 
+                stageElement.textContent='Yosys synthesis';
+                setWorkbenchStatus('Building · '+topModule);
                 log(`\n--- SYNTHESIZING: ${topModule} ---`, 'warn');
                 const tYosys = performance.now();
                 const synthWorker = spawnYosysWorker();
@@ -994,6 +1079,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                 } finally { stopWorker(synthWorker); }
                 log(`[TELEMETRY] Yosys Synthesis took ${(performance.now() - tYosys).toFixed(2)}ms. Netlist payload: ${jsonBuffer.byteLength} bytes.`, 'info');
 
+                stageElement.textContent='NextPNR place & route';
                 log(`\n--- PLACE & ROUTE (NEXTPNR) ---`, 'warn');
                 const tFetchDb = performance.now();
                 // ✅ Correct arguments: key (string) + brotli instance
@@ -1032,6 +1118,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                 } finally { stopWorker(pnrWorker); }
                 log(`[TELEMETRY] NextPNR Execution took ${(performance.now() - tPnr).toFixed(2)}ms. FASM output: ${pipelineState.fasmStr.length} characters.`, 'info');
 
+                stageElement.textContent='Bitstream assembly';
                 log(`\n--- ASSEMBLING BITSTREAM ---`, 'warn');
                 
                 const tFetchMap = performance.now();
@@ -1088,12 +1175,19 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                 const totalTime = ((performance.now() - pipelineStart) / 1000).toFixed(2);
                 log(`[TELEMETRY] Frames2Bit Compilation took ${(performance.now() - tF2B).toFixed(2)}ms. Resulting .bit: ${bitstream.length} bytes.`, 'info');
                 log(`✅ BUILD SUCCESSFUL in ${totalTime}s. Ready to Flash.`, 'warn');
+                stageElement.textContent='Complete';
+                setWorkbenchStatus('Bitstream ready · '+topModule);
+                recordBuild(totalTime);
                 
                 document.getElementById('btn-dl-frames').disabled = false;
                 document.getElementById('btn-dl-bit').disabled = false;
                 document.getElementById('btn-flash').disabled = false;
 
-            } catch (err) { log(`[BUILD FATAL] ${err}`, 'error'); }
+            } catch (err) {
+                stageElement.textContent='Build failed';
+                setWorkbenchStatus('Build failed · no bitstream ready');
+                log(`[BUILD FATAL] ${err}`, 'error');
+            }
             finally { document.getElementById('btn-build').disabled = false; }
         };
 
@@ -1111,6 +1205,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                 if (idcode !== ENGINE_ASSETS.idcode) throw new Error(`Silicon mismatch: got 0x${idcode.toString(16).toUpperCase()}, expected 0x${ENGINE_ASSETS.idcode.toString(16).toUpperCase()}`);
                 await jtag.programXC7(pipelineState.bitstream);
                 log("⚡ HARDWARE FLASHED SUCCESSFULLY!", 'warn');
+                setWorkbenchStatus('Hardware programmed · Urbana XC7S50');
                 } finally { await jtag.close(); }
             } catch(err) { log(`[FLASH FATAL] ${err}`, 'error'); }
             finally { document.getElementById('btn-flash').disabled = !pipelineState.bitstream; }
@@ -1151,6 +1246,12 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
         });
         
         window.onload = () => {
+            let light=true;
+            try { light=localStorage.getItem('urbana-light-mode')!=='0'; } catch(_) {}
+            document.body.classList.toggle('light',light);
+            document.getElementById('theme-toggle').textContent=light?'Dark mode':'Light mode';
+            renderRecent();
+            renderHistory();
             loadState();
             if(navigator.usb) checkHardwareStatus();
             // 🔥 Pre-warm the asset cache in the background
