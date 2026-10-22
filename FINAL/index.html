@@ -42,7 +42,7 @@
         #serial-in { width: 100%; box-sizing: border-box; background: #000; color: #fff; border: 1px solid #333; padding: 10px; border-radius: 4px; font-family: monospace; }
         #hw-status { font-size: 0.9rem; font-weight: bold; padding: 5px 10px; border-radius: 4px; background: #333; }
     </style>
-    <script src="https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@8a27f287c47ce4a9997232bf05625598b4c982fe/PRODUCTION_GRADE/ftdi-jtag.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@cc11b211ba1e02b5dd84f51c4203429f77a490a3/PRODUCTION_GRADE/ftdi-jtag.js"></script>
 </head>
 <body>
 
@@ -255,7 +255,10 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                         throw new Error(`[CACHE] Unknown asset key: "${key}"`);
                 }
 
-                return _cache[key];
+                const pending = _cache[key];
+                // A transient network error must not poison subsequent builds.
+                pending.catch(() => { if (_cache[key] === pending) delete _cache[key]; });
+                return pending;
             },
 
             /**
@@ -270,8 +273,8 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                     this.get('framesWasm', brotli, ENGINE_ASSETS, log),
                     this.get('fasmMap',    brotli, ENGINE_ASSETS, log),
                     this.get('yaml',       brotli, ENGINE_ASSETS, log),
-                ]).catch(err => log(`[CACHE] Warmup error (non-fatal): ${err}`, 'warn'));
-                log('[CACHE] All assets warm.', 'info');
+                ]).then(() => log('[CACHE] All assets warm.', 'info'))
+                  .catch(err => log(`[CACHE] Warmup error (non-fatal): ${err}`, 'warn'));
             },
 
             /** Manually invalidate a single key (e.g. if ENGINE_ASSETS changes). */
@@ -288,7 +291,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                        /^(\d+\.\d+\.\d+\.\d+)$/.test(location.hostname);   // covers LAN IPs like 192.168.x.x
 
         const baseUrl = new URL('./', import.meta.url).href;   // directory of this script
-        const CDN_BASE = 'https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@8a27f287c47ce4a9997232bf05625598b4c982fe/PRODUCTION_GRADE/';
+        const CDN_BASE = 'https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@cc11b211ba1e02b5dd84f51c4203429f77a490a3/PRODUCTION_GRADE/';
 
         // Helper: return correct URL for an asset (local during development, CDN otherwise)
         function assetUrl(filename) {
@@ -578,8 +581,17 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
 
         function downloadBlob(filename, data, isText = false) {
             const blob = new Blob([data], { type: isText ? 'text/plain' : 'application/octet-stream' });
-            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
-            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            const a = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            try { a.click(); }
+            finally {
+                a.remove();
+                // Allow the browser to begin the download before revoking the URL.
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            }
         }
 
         document.getElementById('btn-dl-frames').onclick = () => { if (pipelineState.framesStr) downloadBlob('browser_generated.frames', pipelineState.framesStr, true); };
@@ -595,6 +607,26 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
         }
 
         // --- DYNAMIC WORKER FACTORY (CROSS-ORIGIN SAFE) ---
+        function blobWorker(source, options) {
+            const url = URL.createObjectURL(new Blob([source], { type: 'application/javascript' }));
+            try {
+                const worker = new Worker(url, options);
+                worker._sourceBlobUrl = url;
+                return worker;
+            } catch (err) {
+                URL.revokeObjectURL(url);
+                throw err;
+            }
+        }
+
+        function stopWorker(worker) {
+            if (!worker) return;
+            worker.terminate();
+            if (worker._sourceBlobUrl) URL.revokeObjectURL(worker._sourceBlobUrl);
+        }
+
+        let yosysPreflightDone = false;
+
         async function spawnWorker(scriptName) {
             const scriptUrl = assetUrl(scriptName);   // uses the helper
             const res = await fetch(scriptUrl);
@@ -605,14 +637,14 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                 code = code.replace(/importScripts\(['"](?!http|data)(.*?)['"]\)/g, `importScripts('${CDN_BASE}$1')`);
             }
             
-            return new Worker(URL.createObjectURL(new Blob([code], { type: 'application/javascript' })));
+            return blobWorker(code);
         }
 
         function spawnYosysWorker() {
             const yosysCode = `
                 import { runYosys } from 'https://cdn.jsdelivr.net/npm/@yowasp/yosys@0.65.1153/gen/bundle.js';
                 self.onmessage = async (e) => {
-                    const { topModule, verilogFiles } = e.data;
+                    const { topModule, verilogFiles, checkSelfTest } = e.data;
                     try {
                         const readCommands = Object.keys(verilogFiles).map(filename => 'read_verilog -sv ' + filename).join('; ');
                         const script = [
@@ -625,8 +657,11 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                         ].join('; ');
                         
                         // Fail early with a clear runtime diagnostic before HDL synthesis.
-                        const preflight = await runYosys(['--version']);
-                        self.postMessage({ type: 'log', text: '[SELF-TEST] YoWASP Yosys runtime initialized (@0.65.1153).' });
+                        if (checkSelfTest) {
+                            await runYosys(['--version']);
+                            self.postMessage({ type: 'self_test_ok' });
+                            self.postMessage({ type: 'log', text: '[SELF-TEST] YoWASP Yosys runtime initialized (@0.65.1153).' });
+                        }
 
                         const out = await runYosys(['-p', script], verilogFiles, { 
                             stdout: b => b && self.postMessage({ type: 'log', text: new TextDecoder().decode(b).trimEnd() }), 
@@ -639,7 +674,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                     } catch (err) { self.postMessage({ type: 'error', message: err.message }); }
                 };
             `;
-            return new Worker(URL.createObjectURL(new Blob([yosysCode], { type: 'application/javascript' })), { type: 'module' });
+            return blobWorker(yosysCode, { type: 'module' });
         }
 
         // --- MAIN BUILD PIPELINE (with assetCache) ---
@@ -677,15 +712,18 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                 log(`\n--- SYNTHESIZING: ${topModule} ---`, 'warn');
                 const tYosys = performance.now();
                 const synthWorker = spawnYosysWorker();
-                jsonBuffer = await new Promise((resolve, reject) => {
-                    synthWorker.onmessage = (e) => {
-                        if (e.data.type === 'log') log(e.data.text);
-                        else if (e.data.type === 'success') resolve(e.data.jsonBuffer);
-                        else if (e.data.type === 'error') reject(e.data.message);
-                    };
-                    synthWorker.postMessage({ topModule, verilogFiles: verilogPayload });
-                });
-                synthWorker.terminate();
+                try {
+                    jsonBuffer = await new Promise((resolve, reject) => {
+                        synthWorker.onerror = e => reject(e.message || 'Yosys worker failed to load');
+                        synthWorker.onmessage = (e) => {
+                            if (e.data.type === 'log') log(e.data.text);
+                            else if (e.data.type === 'self_test_ok') yosysPreflightDone = true;
+                            else if (e.data.type === 'success') resolve(e.data.jsonBuffer);
+                            else if (e.data.type === 'error') reject(e.data.message);
+                        };
+                        synthWorker.postMessage({ topModule, verilogFiles: verilogPayload, checkSelfTest: !yosysPreflightDone });
+                    });
+                } finally { stopWorker(synthWorker); }
                 log(`[TELEMETRY] Yosys Synthesis took ${(performance.now() - tYosys).toFixed(2)}ms. Netlist payload: ${jsonBuffer.byteLength} bytes.`, 'info');
 
                 log(`\n--- PLACE & ROUTE (NEXTPNR) ---`, 'warn');
@@ -704,7 +742,9 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                 const wasmClone = wasmDecomp.slice(0);          // cloned ArrayBuffer
                 const dbClone = dbDecomp.slice(0);
 
-                await new Promise((resolve, reject) => {
+                try {
+                  await new Promise((resolve, reject) => {
+                    pnrWorker.onerror = e => reject(e.message || 'NextPNR worker failed');
                     pnrWorker.onmessage = (e) => {
                         if (e.data.type === 'log') log(`[PNR] ${e.data.text}`);
                         else if (e.data.type === 'fasm_fixed') { pipelineState.fasmStr = e.data.data; resolve(); }
@@ -720,8 +760,8 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                         jsonBuffer, 
                         xdc: xdcString 
                     }, [wasmClone, dbClone, jsonBuffer]);
-                });
-                pnrWorker.terminate();
+                  });
+                } finally { stopWorker(pnrWorker); }
                 log(`[TELEMETRY] NextPNR Execution took ${(performance.now() - tPnr).toFixed(2)}ms. FASM output: ${pipelineState.fasmStr.length} characters.`, 'info');
 
                 log(`\n--- ASSEMBLING BITSTREAM ---`, 'warn');
@@ -733,15 +773,18 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
 
                 const tF2F = performance.now();
                 const fasmWorker = await spawnWorker('fasm2frames2.js');
-                const frames = await new Promise((res, rej) => {
+                let frames;
+                try {
+                  frames = await new Promise((res, rej) => {
+                    fasmWorker.onerror = e => rej(e.message || 'FASM worker failed');
                     fasmWorker.onmessage = e => {
                         if (e.data.type === 'log') log(e.data.text);
                         else if (e.data.type === 'success') { log(`[F2F] ${e.data.telemetry}`); res(e.data.frames); }
                         else if (e.data.type === 'error') rej(e.data.message);
                     };
                     fasmWorker.postMessage({ fasmStr: pipelineState.fasmStr, mapData: map });
-                });
-                fasmWorker.terminate();
+                  });
+                } finally { stopWorker(fasmWorker); }
                 pipelineState.framesStr = frames;
                 log(`[TELEMETRY] FASM2Frames Translation took ${(performance.now() - tF2F).toFixed(2)}ms.`, 'info');
 
@@ -754,7 +797,10 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                 // 🔧 FIX 3: Clone the frames wasm buffer before transfer
                 const framesWasmClone = framesWasmDecomp.slice(0);
 
-                const bitstream = await new Promise((res, rej) => {
+                let bitstream;
+                try {
+                  bitstream = await new Promise((res, rej) => {
+                    framesWorker.onerror = e => rej(e.message || 'Frames2Bit worker failed');
                     framesWorker.onmessage = e => {
                         if (e.data.type === 'log') log(`[F2B] ${e.data.text}`);
                         else if (e.data.type === 'success') res(e.data.bitstream);
@@ -767,9 +813,8 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                         framesStr: frames, 
                         wasmBuffer: framesWasmClone 
                     }, [framesWasmClone]);
-                });
-
-                framesWorker.terminate();
+                  });
+                } finally { stopWorker(framesWorker); }
                 pipelineState.bitstream = bitstream;
                 
                 const totalTime = ((performance.now() - pipelineStart) / 1000).toFixed(2);
