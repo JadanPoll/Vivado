@@ -42,7 +42,7 @@
         #serial-in { width: 100%; box-sizing: border-box; background: #000; color: #fff; border: 1px solid #333; padding: 10px; border-radius: 4px; font-family: monospace; }
         #hw-status { font-size: 0.9rem; font-weight: bold; padding: 5px 10px; border-radius: 4px; background: #333; }
     </style>
-    <script src="https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@main/PRODUCTION_GRADE/ftdi-jtag.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@8a27f287c47ce4a9997232bf05625598b4c982fe/PRODUCTION_GRADE/ftdi-jtag.js"></script>
 </head>
 <body>
 
@@ -109,7 +109,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
             <h3>Source Definition</h3>
             <div class="form-group">
                 <label for="cfg-base">Base Raw URL</label>
-                <input type="text" id="cfg-base" value="https://raw.githubusercontent.com/JadanPoll/Vivado/main/PRODUCTION_GRADE">
+                <input type="text" id="cfg-base" value="https://raw.githubusercontent.com/JadanPoll/Vivado/8a27f287c47ce4a9997232bf05625598b4c982fe/PRODUCTION_GRADE">
             </div>
             <div style="display: flex; gap: 15px; margin-top: 15px;">
                 <div class="form-group" style="flex: 1;">
@@ -288,7 +288,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                        /^(\d+\.\d+\.\d+\.\d+)$/.test(location.hostname);   // covers LAN IPs like 192.168.x.x
 
         const baseUrl = new URL('./', import.meta.url).href;   // directory of this script
-        const CDN_BASE = 'https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@main/PRODUCTION_GRADE/';
+        const CDN_BASE = 'https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@8a27f287c47ce4a9997232bf05625598b4c982fe/PRODUCTION_GRADE/';
 
         // Helper: return correct URL for an asset (local during development, CDN otherwise)
         function assetUrl(filename) {
@@ -610,7 +610,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
 
         function spawnYosysWorker() {
             const yosysCode = `
-                import { runYosys } from 'https://cdn.jsdelivr.net/npm/@yowasp/yosys/gen/bundle.js';
+                import { runYosys } from 'https://cdn.jsdelivr.net/npm/@yowasp/yosys@0.65.1154/gen/bundle.js';
                 self.onmessage = async (e) => {
                     const { topModule, verilogFiles } = e.data;
                     try {
@@ -624,6 +624,10 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                             'write_json synth.json'
                         ].join('; ');
                         
+                        // Fail early with a clear runtime diagnostic before HDL synthesis.
+                        const preflight = await runYosys(['--version']);
+                        self.postMessage({ type: 'log', text: '[SELF-TEST] YoWASP Yosys runtime initialized (@0.65.1154).' });
+
                         const out = await runYosys(['-p', script], verilogFiles, { 
                             stdout: b => b && self.postMessage({ type: 'log', text: new TextDecoder().decode(b).trimEnd() }), 
                             stderr: b => b && self.postMessage({ type: 'log', text: '[WARN] ' + new TextDecoder().decode(b).trimEnd() }) 
