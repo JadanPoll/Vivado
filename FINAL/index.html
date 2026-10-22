@@ -492,10 +492,8 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
             } catch (e) { return inputUrl; }
         }
 
-        document.getElementById('cfg-base').addEventListener('change', (e) => {
-            const formatted = normalizeGithubUrl(e.target.value);
-            if (formatted !== e.target.value) { e.target.value = formatted; saveState(); }
-        });
+        // Preserve GitHub URLs for discovery; normalize only when fetching source files.
+        document.getElementById('cfg-base').addEventListener('change', saveState);
 
         // GitHub project discovery uses the public REST API; no token or backend needed.
         // Only fetch small source/constraint files, not Git LFS blobs or generated outputs.
