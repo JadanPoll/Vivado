@@ -4,7 +4,7 @@ self.onmessage = async function(e) {
         const debugLog = (msg) => self.postMessage({ type: 'log', text: `[F2F-DEBUG] ${msg}` });
         debugLog("Initializing Hierarchical F2F Pipeline...");
 
-        debugLog("FASM INPUT:\n" + fasmStr);
+        debugLog(`FASM input received: ${fasmStr.length} characters.`);
         const frameData = new Map();
         const grid = mapData.grid;
         const features = mapData.features;
