@@ -722,7 +722,20 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                 self.onmessage = async (e) => {
                     const { topModule, verilogFiles, checkSelfTest } = e.data;
                     try {
-                        const readCommands = Object.keys(verilogFiles).map(filename => 'read_verilog -sv ' + filename).join('; ');
+                        // YoWASP's input files live in a flat virtual working directory.
+                        // GitHub paths are identifiers, not directories created inside WASI.
+                        const mountedFiles = {};
+                        for (const [repoPath, source] of Object.entries(verilogFiles)) {
+                            const name = repoPath.split('/').pop();
+                            if (!/^[A-Za-z0-9_.$-]+\\.(v|sv)$/i.test(name)) {
+                                throw new Error('Unsupported HDL filename: ' + repoPath);
+                            }
+                            if (Object.prototype.hasOwnProperty.call(mountedFiles, name)) {
+                                throw new Error('Multiple HDL files share filename ' + name + '; rename one before building.');
+                            }
+                            mountedFiles[name] = source;
+                        }
+                        const readCommands = Object.keys(mountedFiles).map(filename => 'read_verilog -sv ' + filename).join('; ');
                         const script = [
                             readCommands,
                             'hierarchy  -top ' + topModule,
@@ -738,7 +751,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                             self.postMessage({ type: 'log', text: '[SELF-TEST] YoWASP Yosys runtime initialized (@0.65.1153).' });
                         }
 
-                        const out = await runYosys(['-p', script], verilogFiles, { 
+                        const out = await runYosys(['-p', script], mountedFiles, { 
                             stdout: b => b && self.postMessage({ type: 'log', text: new TextDecoder().decode(b).trimEnd() }), 
                             stderr: b => b && self.postMessage({ type: 'log', text: '[WARN] ' + new TextDecoder().decode(b).trimEnd() }) 
                         });
