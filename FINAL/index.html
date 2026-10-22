@@ -727,7 +727,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                         const mountedFiles = {};
                         for (const [repoPath, source] of Object.entries(verilogFiles)) {
                             const name = repoPath.split('/').pop();
-                            if (!/^[A-Za-z0-9_.$-]+\\.(v|sv)$/i.test(name)) {
+                            if (!/^[A-Za-z0-9_.$-]+[.](v|sv)$/i.test(name)) {
                                 throw new Error('Unsupported HDL filename: ' + repoPath);
                             }
                             if (Object.prototype.hasOwnProperty.call(mountedFiles, name)) {
