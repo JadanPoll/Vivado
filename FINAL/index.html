@@ -106,7 +106,17 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
 
     <div id="view-repo" class="hidden">
         <div class="panel">
-            <h3>Source Definition</h3>
+            <h3>FPGA Project</h3>
+            <div class="form-group">
+                <label for="workspace-board">Target Board</label>
+                <select id="workspace-board" style="flex:1;padding:8px;background:#0d0f1a;color:#e0e0e0;border:1px solid #333;border-radius:4px">
+                    <option value="urbana-xc7s50">RealDigital Urbana — Xilinx Spartan-7 XC7S50</option>
+                </select>
+            </div>
+            <div style="font-size:.8rem;color:#b0b8c8;margin-bottom:12px">
+                Current target: Urbana XC7S50. Pin assignments come from the active project's Urbana .xdc file.
+                Other boards require their own pin constraints and bitstream architecture data.
+            </div>
             <div class="form-group">
                 <label for="cfg-base">GitHub Repository URL (or Raw URL)</label>
                 <input type="text" id="cfg-base" value="https://raw.githubusercontent.com/JadanPoll/Vivado/8a27f287c47ce4a9997232bf05625598b4c982fe/PRODUCTION_GRADE">
@@ -128,7 +138,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                 </div>
             </div>
             <div class="form-group" style="margin-top: 15px;">
-                <label>XDC File Path:</label>
+                <label>Urbana XDC:</label>
                 <div style="display: flex; flex: 1; gap: 10px;">
                     <input type="text" id="cfg-xdc-file" value="serv.xdc" style="flex: 1;">
                     <button id="btn-fetch-xdc" class="action-btn gray" style="padding: 8px 16px;">Fetch XDC ↓</button>
@@ -150,7 +160,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                 <textarea id="code-v-repo" spellcheck="false" style="color: #ce9178; height: 280px;" placeholder="Click 'Fetch ↓' to load remote Verilog files..." disabled></textarea>
             </div>
             <div class="panel">
-                <h3>Project Constraints (.xdc)</h3><div id="workspace-xdc-label" style="font-size:.75rem;color:#9cdcfe"></div>
+                <h3>Urbana XC7S50 Pin Constraints (.xdc)</h3><div id="workspace-xdc-label" style="font-size:.75rem;color:#9cdcfe"></div>
                 <textarea id="code-xdc-repo" spellcheck="false" style="color: #9cdcfe; height: 280px;" placeholder="# Paste XDC constraints here or click 'Fetch XDC ↓'..."></textarea>
             </div>
         </div>
