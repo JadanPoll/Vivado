@@ -1,4 +1,4 @@
 // SW0 directly controls LED0.
-module top(input wire [0:0] SW, output wire [0:0] LED);
-  assign LED[0] = SW[0];
+module top(input wire SW, output wire LED);
+  assign LED = SW;
 endmodule
