@@ -113,8 +113,10 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
             </div>
             <div style="display: flex; gap: 8px; margin-top: 8px;">
                 <button id="btn-discover" class="action-btn gray" type="button">Discover Project ↓</button>
+                <button id="btn-defaults" class="action-btn gray" type="button">Defaults</button>
                 <span id="discover-status" style="font-size: 0.8rem; align-self: center;"></span>
             </div>
+            <div class="form-group" style="margin-top:12px"><label for="workspace-project">Project</label><select id="workspace-project" style="flex:1;padding:8px" disabled><option>Discover a repository</option></select></div>
             <div style="display: flex; gap: 15px; margin-top: 15px;">
                 <div class="form-group" style="flex: 1;">
                     <label>Top Module:</label>
@@ -139,14 +141,16 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                 <div class="panel-header">
                     <h3>Remote Verilog Editor</h3>
                     <div style="display: flex; gap: 5px;">
-                        <select id="repo-v-select" style="padding: 4px; background: #0d0f1a; border: 1px solid #333; color: #fff; border-radius: 4px; width: 120px;" disabled></select>
+                        <span id="workspace-active-path" style="font-size:.75rem;color:#9cdcfe"></span>
                         <button id="btn-fetch-v" class="action-btn gray" style="padding: 6px 12px; font-size: 0.85rem;">Fetch ↓</button>
                     </div>
                 </div>
+                <div id="workspace-tabs" style="display:flex;flex-wrap:wrap;gap:5px;margin:8px 0"></div>
+                <div id="workspace-members" style="font-size:.8rem;margin-bottom:8px"></div>
                 <textarea id="code-v-repo" spellcheck="false" style="color: #ce9178; height: 280px;" placeholder="Click 'Fetch ↓' to load remote Verilog files..." disabled></textarea>
             </div>
             <div class="panel">
-                <h3>Remote Constraints Editor (.xdc)</h3>
+                <h3>Project Constraints (.xdc)</h3><div id="workspace-xdc-label" style="font-size:.75rem;color:#9cdcfe"></div>
                 <textarea id="code-xdc-repo" spellcheck="false" style="color: #9cdcfe; height: 280px;" placeholder="# Paste XDC constraints here or click 'Fetch XDC ↓'..."></textarea>
             </div>
         </div>
@@ -499,14 +503,86 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
         let workspaceRevision = 0;
         let workspaceReady = false;
         let workspaceIdentity = '';
+        let workspaceCatalog = [];
+        let workspaceSourceBase = '';
+        let workspaceOriginal = {};
+        let workspaceOriginalXdc = '';
+        let workspaceMembers = {};
+        let workspaceXdcPath = '';
+        const workspaceDraftPrefix = 'urbana-workspace-draft:';
+        function saveWorkspaceDraft() {
+            if (!workspaceIdentity || !workspaceReady) return;
+            try {
+                localStorage.setItem(workspaceDraftPrefix + workspaceIdentity, JSON.stringify({
+                    files: remoteVerilogFiles,
+                    xdc: document.getElementById('code-xdc-repo').value,
+                    top: document.getElementById('cfg-top-repo').value,
+                    members: workspaceMembers,
+                    active: activeRepoVFile
+                }));
+            } catch(e) { log('[WORKSPACE] Browser storage unavailable; edits may not survive refresh.', 'warn'); }
+        }
+        function hasWorkspaceEdits() {
+            return Object.keys(remoteVerilogFiles).some(k => remoteVerilogFiles[k] !== workspaceOriginal[k])
+                || (workspaceReady && document.getElementById('code-xdc-repo').value !== workspaceOriginalXdc);
+        }
+        function confirmWorkspaceSwitch() {
+            return !hasWorkspaceEdits() || confirm('Switch projects? Your edited files are saved as a local draft for this project.');
+        }
+        function renderWorkspaceUI() {
+            const tabs = document.getElementById('workspace-tabs');
+            const members = document.getElementById('workspace-members');
+            const paths = Object.keys(remoteVerilogFiles);
+            tabs.replaceChildren();
+            members.replaceChildren();
+            for (const path of paths) {
+                const tab = document.createElement('button');
+                tab.type = 'button';
+                const label = path.split('/').pop();
+                const duplicate = paths.some(other => other !== path && other.split('/').pop() === label);
+                tab.textContent = (duplicate ? path : label) + (remoteVerilogFiles[path] !== workspaceOriginal[path] ? ' *' : '');
+                tab.title = path;
+                tab.className = 'action-btn gray';
+                tab.style.padding = '5px 9px';
+                if (path === activeRepoVFile) tab.style.outline = '2px solid #9cdcfe';
+                tab.onclick = () => {
+                    activeRepoVFile = path;
+                    document.getElementById('code-v-repo').value = remoteVerilogFiles[path];
+                    renderWorkspaceUI();
+                    saveWorkspaceDraft();
+                };
+                tabs.appendChild(tab);
+                const item = document.createElement('label');
+                item.style.marginRight = '12px';
+                const check = document.createElement('input');
+                check.type = 'checkbox';
+                check.checked = workspaceMembers[path] !== false;
+                check.onchange = () => {
+                    workspaceMembers[path] = check.checked;
+                    document.getElementById('cfg-v-files').value = paths.filter(k => workspaceMembers[k] !== false).join(', ');
+                    saveWorkspaceDraft();
+                };
+                item.appendChild(check);
+                item.appendChild(document.createTextNode(' Build ' + label));
+                item.title = path;
+                members.appendChild(item);
+            }
+            document.getElementById('workspace-active-path').textContent = activeRepoVFile || '';
+            document.getElementById('workspace-xdc-label').textContent = workspaceXdcPath + (document.getElementById('code-xdc-repo').value !== workspaceOriginalXdc ? ' *' : '');
+        }
         function invalidateWorkspace() {
             workspaceRevision++;
             workspaceReady = false;
             workspaceIdentity = '';
+            workspaceMembers = {};
+            workspaceOriginal = {};
+            workspaceOriginalXdc = '';
+            workspaceXdcPath = '';
             remoteVerilogFiles = {};
             activeRepoVFile = null;
             updateVFileDropdown();
             document.getElementById('code-xdc-repo').value = '';
+            renderWorkspaceUI();
             document.getElementById('btn-flash').disabled = true;
             pipelineState = { fasmStr: null, framesStr: null, bitstream: null };
             saveState();
@@ -528,12 +604,31 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
             }));
             return files;
         }
-        function commitWorkspace(files, xdcText, identity) {
-            remoteVerilogFiles = files;
-            document.getElementById('code-xdc-repo').value = xdcText;
+        function commitWorkspace(files, xdcText, identity, xdcPath) {
+            workspaceOriginal = {...files};
+            workspaceOriginalXdc = xdcText;
+            workspaceXdcPath = xdcPath || document.getElementById('cfg-xdc-file').value;
+            workspaceMembers = Object.fromEntries(Object.keys(files).map(k=>[k,true]));
+            let draft;
+            try { draft = JSON.parse(localStorage.getItem(workspaceDraftPrefix + identity) || 'null'); } catch(e) {}
+            remoteVerilogFiles = {...files};
+            if (draft && draft.files) {
+                for (const path of Object.keys(files)) {
+                    if (Object.prototype.hasOwnProperty.call(draft.files,path)) remoteVerilogFiles[path] = draft.files[path];
+                }
+                workspaceMembers = {...workspaceMembers,...draft.members};
+                if (draft.top) document.getElementById('cfg-top-repo').value = draft.top;
+            }
+            document.getElementById('code-xdc-repo').value = draft && typeof draft.xdc === 'string' ? draft.xdc : xdcText;
             workspaceReady = true;
             workspaceIdentity = identity;
             updateVFileDropdown();
+            if (draft && remoteVerilogFiles[draft.active] !== undefined) {
+                activeRepoVFile = draft.active;
+                document.getElementById('code-v-repo').value = remoteVerilogFiles[activeRepoVFile];
+            }
+            document.getElementById('cfg-v-files').value = Object.keys(files).filter(k => workspaceMembers[k] !== false).join(', ');
+            renderWorkspaceUI();
             saveState();
         }
         async function githubProject(input) {
@@ -570,73 +665,85 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
             }
             return { owner, repo, ref, dir, api };
         }
-        document.getElementById('btn-discover').onclick = async () => {
-            const btn = document.getElementById('btn-discover');
-            const status = document.getElementById('discover-status');
+        async function loadSelectedWorkspace(folder) {
+            if (!confirmWorkspaceSwitch()) return;
             const revision = ++workspaceRevision;
-            btn.disabled = true;
-            status.textContent = 'Discovering files...';
+            const project = workspaceSourceBase;
             workspaceReady = false;
+            document.getElementById('discover-status').textContent = 'Loading project...';
+            try {
+                const candidates = workspaceCatalog.filter(x => !folder || x.path.startsWith(folder + '/'));
+                const hdl = candidates.filter(x => /\.(v|sv)$/i.test(x.path) && x.size < 2000000
+                    && !/^(tb[_-]|testbench[_-]|.*[_-]tb\.(v|sv)$)/i.test(x.path.split('/').pop()));
+                const xdc = candidates.filter(x => /\.xdc$/i.test(x.path) && x.size < 2000000);
+                if (!hdl.length || !xdc.length) throw new Error('Project requires HDL and an XDC');
+                const xdcChoice = xdc.find(x=> x.path.slice(0,x.path.lastIndexOf('/')) === folder) || xdc[0];
+                const ordered = hdl.sort((a,b)=>
+                    ((/(^|\/)(top|.*_top)\.(sv|v)$/i.test(a.path)?0:1)-
+                     (/(^|\/)(top|.*_top)\.(sv|v)$/i.test(b.path)?0:1)) ||
+                     a.path.localeCompare(b.path));
+                const names = ordered.map(x=>x.path);
+                const files = await fetchWorkspaceFiles(project, names);
+                const response = await fetch(buildUrl(project, xdcChoice.path));
+                if (!response.ok) throw new Error('HTTP '+response.status+' fetching '+xdcChoice.path);
+                const xdcText = await response.text();
+                if (revision !== workspaceRevision) return;
+                document.getElementById('cfg-base').value = project;
+                document.getElementById('cfg-v-files').value = names.join(', ');
+                document.getElementById('cfg-xdc-file').value = xdcChoice.path;
+                const source = files[names[0]];
+                const match = source.match(/\bmodule\s+([A-Za-z_$][\w$]*)\b/);
+                if (match) document.getElementById('cfg-top-repo').value = match[1];
+                commitWorkspace(files, xdcText, project+'|'+folder, xdcChoice.path);
+                document.getElementById('discover-status').textContent = names.length+' HDL + XDC loaded';
+                log('[WORKSPACE] Loaded '+folder+': '+names.length+' HDL files and '+xdcChoice.path,'info');
+            } catch(err) {
+                if(revision === workspaceRevision) {
+                    invalidateWorkspace();
+                    document.getElementById('discover-status').textContent = 'Load failed';
+                    log('[WORKSPACE ERROR] '+err.message,'error');
+                }
+            }
+        }
+        document.getElementById('workspace-project').onchange = e => loadSelectedWorkspace(e.target.value);
+        document.getElementById('btn-defaults').onclick = () => {
+            if(!confirmWorkspaceSwitch()) return;
+            document.getElementById('cfg-base').value =
+                'https://github.com/JadanPoll/Vivado/tree/main/PRODUCTION_GRADE/TESTS';
+            document.getElementById('btn-discover').click();
+        };
+        document.getElementById('btn-discover').onclick = async () => {
+            if(!confirmWorkspaceSwitch()) return;
+            const btn = document.getElementById('btn-discover');
+            btn.disabled = true;
             try {
                 const project = await githubProject(document.getElementById('cfg-base').value.trim());
-                const { owner, repo, ref, dir, api } = project;
-                const response = await fetch(api + '/git/trees/' + ref.split('/').map(encodeURIComponent).join('%2F') + '?recursive=1');
-                if (!response.ok) throw new Error('GitHub tree HTTP ' + response.status);
+                const response = await fetch(project.api+'/git/trees/'+project.ref.split('/').map(encodeURIComponent).join('%2F')+'?recursive=1');
+                if(!response.ok) throw new Error('GitHub tree HTTP '+response.status);
                 const tree = await response.json();
-                if (tree.truncated) throw new Error('Repository tree truncated: choose a smaller folder');
-                const entries = (tree.tree || []).filter(x => x.type === 'blob' && (!dir || x.path.startsWith(dir + '/')));
-                const hdl = entries.filter(x => /\.(v|sv)$/i.test(x.path) && x.size < 2000000);
-                const xdc = entries.filter(x => /\.xdc$/i.test(x.path) && x.size < 2000000);
-                if (!hdl.length) throw new Error('No Verilog source found in selected folder');
-                // A whole repository often contains independent examples. Prefer the folder
-                // containing the first XDC, rather than compiling unrelated projects together.
-                let selected = hdl;
-                let chosenXdc;
-                if (xdc.length) {
-                    chosenXdc = xdc.find(x => dir && x.path.substring(0,x.path.lastIndexOf('/')) === dir)
-                        || xdc.find(x => /(^|\/)(top|urbana|constraints|serv)\.xdc$/i.test(x.path))
-                        || xdc[0];
-                    const folder = chosenXdc.path.split('/').slice(0,-1).join('/');
-                    if (!dir && folder) {
-                        selected = hdl.filter(x => x.path.startsWith(folder + '/'));
-                        if (!selected.length) selected = hdl;
-                        if (selected.length < hdl.length)
-                            log('[DISCOVERY] Multiple projects found; selected HDL near ' + chosenXdc.path, 'info');
-                    }
+                if(tree.truncated) throw new Error('Repository tree truncated; use a folder URL');
+                workspaceCatalog = (tree.tree||[]).filter(x=>x.type === 'blob' && (!project.dir || x.path.startsWith(project.dir+'/')));
+                workspaceSourceBase = 'https://raw.githubusercontent.com/'+project.owner+'/'+project.repo+'/'+project.ref;
+                const xdcFiles = workspaceCatalog.filter(x=>/\.xdc$/i.test(x.path));
+                const folders = [...new Set(xdcFiles.map(x=>x.path.split('/').slice(0,-1).join('/')))]
+                    .filter(folder => workspaceCatalog.some(x=>x.path.startsWith(folder+'/') && /\.(v|sv)$/i.test(x.path)));
+                if(!folders.length) throw new Error('No complete HDL + XDC examples found');
+                const select = document.getElementById('workspace-project');
+                select.replaceChildren();
+                for(const folder of folders) {
+                    const opt = document.createElement('option');
+                    opt.value = folder;
+                    opt.textContent = folder || '(repository root)';
+                    select.appendChild(opt);
                 }
-                selected = selected.filter(x => {
-                    const name = x.path.split('/').pop();
-                    return !/^(tb[_-]|testbench[_-]|.*[_-]tb\.(v|sv)$)/i.test(name);
-                });
-                if (!selected.length) throw new Error('No synthesizable HDL found in selected project');
-                const ordered = selected.sort((a,b) =>
-                    ((/(^|\/)(top|.*_top)\.(sv|v)$/i.test(a.path) ? 0 : 1)
-                    - (/(^|\/)(top|.*_top)\.(sv|v)$/i.test(b.path) ? 0 : 1))
-                    || a.path.localeCompare(b.path));
-                const root = 'https://raw.githubusercontent.com/' + owner + '/' + repo + '/' + ref;
-                const names = ordered.map(x => x.path);
-                const files = await fetchWorkspaceFiles(root, names);
-                if (!chosenXdc) throw new Error('No .xdc found; select or enter constraints manually');
-                const xdcResponse = await fetch(buildUrl(root, chosenXdc.path));
-                if (!xdcResponse.ok) throw new Error('HTTP ' + xdcResponse.status + ' fetching ' + chosenXdc.path);
-                const constraints = await xdcResponse.text();
-                if (revision !== workspaceRevision) return;
-                document.getElementById('cfg-base').value = root;
-                document.getElementById('cfg-v-files').value = names.join(', ');
-                document.getElementById('cfg-xdc-file').value = chosenXdc.path;
-                const first = files[names[0]] || '';
-                const modules = [...first.matchAll(/\bmodule\s+([a-zA-Z_$][\w$]*)\b/g)];
-                if (modules.length) document.getElementById('cfg-top-repo').value = modules[0][1];
-                commitWorkspace(files, constraints, root + '|' + chosenXdc.path);
-                status.textContent = names.length + ' HDL, XDC loaded';
-                log('[DISCOVERY] Project loaded: ' + names.length + ' HDL files + ' + chosenXdc.path, 'info');
+                select.disabled = false;
+                const preferred = project.dir && folders.includes(project.dir) ? project.dir : folders[0];
+                select.value = preferred;
+                await loadSelectedWorkspace(preferred);
             } catch(err) {
-                if (revision === workspaceRevision) {
-                    status.textContent = 'Discovery failed';
-                    invalidateWorkspace();
-                    log('[DISCOVERY ERROR] ' + err.message, 'error');
-                }
-            } finally { btn.disabled = false; }
+                log('[DISCOVERY ERROR] '+err.message,'error');
+                document.getElementById('discover-status').textContent='Discovery failed';
+            } finally { btn.disabled=false; }
         };
 
         function saveState() {
@@ -667,9 +774,10 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
             });
         });
 
-        document.getElementById('code-xdc-repo').addEventListener('input', saveState);
+        document.getElementById('code-xdc-repo').addEventListener('input', () => { renderWorkspaceUI(); saveWorkspaceDraft(); saveState(); });
+        document.getElementById('cfg-top-repo').addEventListener('change', saveWorkspaceDraft);
         document.getElementById('code-v-repo').addEventListener('input', (e) => {
-            if(activeRepoVFile) { remoteVerilogFiles[activeRepoVFile] = e.target.value; saveState(); }
+            if(activeRepoVFile) { remoteVerilogFiles[activeRepoVFile] = e.target.value; renderWorkspaceUI(); saveWorkspaceDraft(); saveState(); }
         });
 
         function buildUrl(base, path) { return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`; }
@@ -707,25 +815,13 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
         };
 
         function updateVFileDropdown() {
-            const select = document.getElementById('repo-v-select');
-            const ta = document.getElementById('code-v-repo');
-            select.innerHTML = '';
-            const files = Object.keys(remoteVerilogFiles);
-            if(files.length === 0) { ta.value = ''; ta.disabled = true; select.disabled = true; return; }
-            ta.disabled = false; select.disabled = false;
-            files.forEach(f => {
-                const opt = document.createElement('option');
-                opt.value = f; opt.textContent = f; opt.title = f; 
-                select.appendChild(opt);
-            });
-            activeRepoVFile = files[0];
-            ta.value = remoteVerilogFiles[activeRepoVFile];
+            const files=Object.keys(remoteVerilogFiles);
+            if (!files.includes(activeRepoVFile)) activeRepoVFile=files[0] || null;
+            const editor=document.getElementById('code-v-repo');
+            editor.disabled=!activeRepoVFile;
+            editor.value=activeRepoVFile ? remoteVerilogFiles[activeRepoVFile] : '';
+            renderWorkspaceUI();
         }
-
-        document.getElementById('repo-v-select').addEventListener('change', (e) => {
-            activeRepoVFile = e.target.value;
-            document.getElementById('code-v-repo').value = remoteVerilogFiles[activeRepoVFile];
-        });
 
         function downloadBlob(filename, data, isText = false) {
             const blob = new Blob([data], { type: isText ? 'text/plain' : 'application/octet-stream' });
