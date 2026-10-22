@@ -529,7 +529,15 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                 const tree = await treeResponse.json();
                 if (tree.truncated) log('[DISCOVERY] GitHub tree truncated; some source files may be missing.', 'warn');
                 const entries = (tree.tree || []).filter(x => x.type === 'blob' && (!dir || x.path.startsWith(dir + '/')));
-                const verilog = entries.filter(x => /\.(v|sv)$/i.test(x.path) && !/(^|\/)(test|tests|tb|testbench|simulation)(\/|_|\.)/i.test(x.path) && x.size < 2000000);
+                // Folder names (including TESTS) are not evidence that a source is a testbench.
+                // When a specific folder is requested, include every HDL file in it.
+                // At repository root, skip only conventionally named testbench files.
+                const verilog = entries.filter(x => {
+                    if (!/\.(v|sv)$/i.test(x.path) || x.size >= 2000000) return false;
+                    if (dir) return true;
+                    const filename = x.path.split('/').pop();
+                    return !/^(tb[_-]|testbench[_-]|.*[_-]tb\.(v|sv)$)/i.test(filename);
+                });
                 const constraints = entries.filter(x => /\.xdc$/i.test(x.path) && x.size < 2000000);
                 if (!verilog.length) throw new Error('No Verilog source found in selected folder');
                 // A filename is only a hint; never silently claim an inferred top module is correct.
