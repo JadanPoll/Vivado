@@ -610,7 +610,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
 
         function spawnYosysWorker() {
             const yosysCode = `
-                import { runYosys } from 'https://cdn.jsdelivr.net/npm/@yowasp/yosys@0.65.1154/gen/bundle.js';
+                import { runYosys } from 'https://cdn.jsdelivr.net/npm/@yowasp/yosys@0.65.1153/gen/bundle.js';
                 self.onmessage = async (e) => {
                     const { topModule, verilogFiles } = e.data;
                     try {
@@ -626,7 +626,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                         
                         // Fail early with a clear runtime diagnostic before HDL synthesis.
                         const preflight = await runYosys(['--version']);
-                        self.postMessage({ type: 'log', text: '[SELF-TEST] YoWASP Yosys runtime initialized (@0.65.1154).' });
+                        self.postMessage({ type: 'log', text: '[SELF-TEST] YoWASP Yosys runtime initialized (@0.65.1153).' });
 
                         const out = await runYosys(['-p', script], verilogFiles, { 
                             stdout: b => b && self.postMessage({ type: 'log', text: new TextDecoder().decode(b).trimEnd() }), 
