@@ -42,7 +42,7 @@
         #serial-in { width: 100%; box-sizing: border-box; background: #000; color: #fff; border: 1px solid #333; padding: 10px; border-radius: 4px; font-family: monospace; }
         #hw-status { font-size: 0.9rem; font-weight: bold; padding: 5px 10px; border-radius: 4px; background: #333; }
     </style>
-    <script src="https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@cc11b211ba1e02b5dd84f51c4203429f77a490a3/PRODUCTION_GRADE/ftdi-jtag.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@a0db773da22cf0f86f4b2f53764b141e9d0515e5/PRODUCTION_GRADE/ftdi-jtag.js"></script>
 </head>
 <body>
 
@@ -291,7 +291,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                        /^(\d+\.\d+\.\d+\.\d+)$/.test(location.hostname);   // covers LAN IPs like 192.168.x.x
 
         const baseUrl = new URL('./', import.meta.url).href;   // directory of this script
-        const CDN_BASE = 'https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@cc11b211ba1e02b5dd84f51c4203429f77a490a3/PRODUCTION_GRADE/';
+        const CDN_BASE = 'https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@a0db773da22cf0f86f4b2f53764b141e9d0515e5/PRODUCTION_GRADE/';
 
         // Helper: return correct URL for an asset (local during development, CDN otherwise)
         function assetUrl(filename) {
@@ -630,6 +630,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
         async function spawnWorker(scriptName) {
             const scriptUrl = assetUrl(scriptName);   // uses the helper
             const res = await fetch(scriptUrl);
+            if (!res.ok) throw new Error(`HTTP ${res.status} loading worker ${scriptName}`);
             let code = await res.text();
             
             // If pulling from remote jsDelivr, patch relative importScripts so they don't 404
@@ -651,8 +652,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                             readCommands,
                             'hierarchy  -top ' + topModule,
                             'proc; opt; memory; opt',
-                            'show -format dot -prefix rtl',
-                            'synth_xilinx -flatten -abc9 -arch xc7 -top ' + topModule,
+                                'synth_xilinx -flatten -abc9 -arch xc7 -top ' + topModule,
                             'write_json synth.json'
                         ].join('; ');
                         
@@ -685,6 +685,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                 document.getElementById('btn-dl-frames').disabled = true;
                 document.getElementById('btn-dl-bit').disabled = true;
                 document.getElementById('btn-flash').disabled = true;
+                pipelineState = { fasmStr: null, framesStr: null, bitstream: null };
                 
                 // 🔧 FIX 1 & 2: Resolve brotliPromise once and pass the brotli instance to assetCache.get()
                 const brotli = await brotliPromise;
@@ -839,11 +840,11 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                 await jtag.init(30000000);
                 const idcode = await jtag.readIDCODE();
                 log(`[USB] IDCODE: 0x${idcode.toString(16).toUpperCase()}`);
-                if (idcode !== ENGINE_ASSETS.idcode) log(`[WARN] Silicon mismatch! Expected 0x${ENGINE_ASSETS.idcode.toString(16).toUpperCase()}`, 'warn');
+                if (idcode !== ENGINE_ASSETS.idcode) throw new Error(`Silicon mismatch: got 0x${idcode.toString(16).toUpperCase()}, expected 0x${ENGINE_ASSETS.idcode.toString(16).toUpperCase()}`);
                 await jtag.programXC7(pipelineState.bitstream);
                 log("⚡ HARDWARE FLASHED SUCCESSFULLY!", 'warn');
             } catch(err) { log(`[FLASH FATAL] ${err}`, 'error'); }
-            finally { document.getElementById('btn-flash').disabled = false; }
+            finally { document.getElementById('btn-flash').disabled = !pipelineState.bitstream; }
         };
 
         document.getElementById('btn-flash-file').onclick = async () => {
