@@ -50,6 +50,15 @@ class WebUSBJtag {
         console.log(`[USB] MPSSE Ready @ ${freqHz/1e6}MHz`);
     }
 
+    async close() {
+        if (!this.device.opened) return;
+        try {
+            await this.device.releaseInterface(0);
+        } finally {
+            await this.device.close();
+        }
+    }
+
     async shiftTMS(tms, count, tdi = 0) {
         await this._transferOut(new Uint8Array([0x4A, count-1, (tdi ? 0x80 : 0x00)|(tms & 0x7F)]), "TMS");
     }
