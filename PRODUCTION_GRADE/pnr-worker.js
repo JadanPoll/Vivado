@@ -259,7 +259,7 @@ function handleSuccess() {
         const rawFasm = self.FS.readFile('/out.fasm', { encoding: 'utf8' });
 
         // FIX 3: was using key 'message' — main thread listens for 'text'
-        self.postMessage({ type: 'log', text: "=== RAW FASM (debug) ===\n" + rawFasm });
+        self.postMessage({ type: 'log', text: '[FASM] Generated ' + rawFasm.length + ' characters; full output available for download.' });
 
         const fixedFasm = applyFasmFix(rawFasm);
         self.postMessage({ type: 'fasm_fixed', data: fixedFasm });
