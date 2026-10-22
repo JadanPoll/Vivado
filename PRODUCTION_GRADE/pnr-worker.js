@@ -239,7 +239,9 @@ function runNextpnr(msg) {
         },
 
         onAbort: function(what) {
-            self.postMessage({ type: 'error', message: `NextPNR aborted: ${what}` });
+            const reason = String(what ?? '(no abort reason supplied by WASM)');
+            self.postMessage({ type: 'error', message:
+                'NextPNR aborted: ' + reason + '. Last stderr: ' + lastError });
             self.postMessage({ type: 'done' });
         }
     };
