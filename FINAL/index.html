@@ -141,7 +141,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
             </div>
             <div class="form-group">
                 <label for="cfg-base">GitHub Repository URL (or Raw URL)</label>
-                <input type="text" id="cfg-base" value="https://github.com/JadanPoll/Vivado/tree/main/PRODUCTION_GRADE/TESTS/showoff1">
+                <input type="text" id="cfg-base" value="https://github.com/JadanPoll/Vivado/tree/main/PRODUCTION_GRADE/DEFAULTS">
             </div>
             <div style="display: flex; gap: 8px; margin-top: 8px;">
                 <button id="btn-discover" class="action-btn gray" type="button">Discover Project ↓</button>
@@ -808,7 +808,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
         document.getElementById('btn-defaults').onclick = () => {
             if(!confirmWorkspaceSwitch()) return;
             document.getElementById('cfg-base').value =
-                'https://github.com/JadanPoll/Vivado/tree/main/PRODUCTION_GRADE/TESTS';
+                'https://github.com/JadanPoll/Vivado/tree/main/PRODUCTION_GRADE/DEFAULTS';
             document.getElementById('btn-discover').click();
         };
         document.getElementById('btn-discover').onclick = async () => {
