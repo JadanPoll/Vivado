@@ -642,7 +642,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
             ta.disabled = false; select.disabled = false;
             files.forEach(f => {
                 const opt = document.createElement('option');
-                opt.value = f; opt.textContent = f.split('/').pop(); 
+                opt.value = f; opt.textContent = f; opt.title = f; 
                 select.appendChild(opt);
             });
             activeRepoVFile = files[0];
