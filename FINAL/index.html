@@ -780,7 +780,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                     fasmWorker.onerror = e => rej(e.message || 'FASM worker failed');
                     fasmWorker.onmessage = e => {
                         if (e.data.type === 'log') log(e.data.text);
-                        else if (e.data.type === 'success') { log(`[F2F] ${e.data.telemetry}`); res(e.data.frames); }
+                        else if (e.data.type === 'success') { log(`[F2F] ${e.data.telemetry}`); const m = /Unmapped (\d+)/.exec(e.data.telemetry || ''); if (m && Number(m[1]) > 0) log(`[F2F WARNING] ${m[1]} unmapped FASM entries: generated bitstream is not independently validated.`, 'warn'); res(e.data.frames); }
                         else if (e.data.type === 'error') rej(e.data.message);
                     };
                     fasmWorker.postMessage({ fasmStr: pipelineState.fasmStr, mapData: map });
@@ -859,6 +859,8 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                     const device = await navigator.usb.requestDevice({ filters: [{vendorId: 0x0403, productId: 0x6010}] });
                     const jtag = new WebUSBJtag(device);
                     await jtag.init(30000000);
+                    const idcode = await jtag.readIDCODE();
+                    if (idcode !== ENGINE_ASSETS.idcode) throw new Error(`Silicon mismatch: got 0x${idcode.toString(16).toUpperCase()}, expected 0x${ENGINE_ASSETS.idcode.toString(16).toUpperCase()}`);
                     await jtag.programXC7(bitstream);
                     log("⚡ HARDWARE FLASHED SUCCESSFULLY!", 'warn');
                 } catch(err) { log(`[FLASH FATAL] ${err}`, 'error'); }
