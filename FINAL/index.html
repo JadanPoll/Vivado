@@ -141,7 +141,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
             </div>
             <div class="form-group">
                 <label for="cfg-base">GitHub Repository URL (or Raw URL)</label>
-                <input type="text" id="cfg-base" value="https://raw.githubusercontent.com/JadanPoll/Vivado/8a27f287c47ce4a9997232bf05625598b4c982fe/PRODUCTION_GRADE">
+                <input type="text" id="cfg-base" value="https://github.com/JadanPoll/Vivado/tree/main/PRODUCTION_GRADE/TESTS/showoff1">
             </div>
             <div style="display: flex; gap: 8px; margin-top: 8px;">
                 <button id="btn-discover" class="action-btn gray" type="button">Discover Project ↓</button>
@@ -842,7 +842,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
         function saveState() {
             try {
                 persistIds.forEach(id => localStorage.setItem(id, document.getElementById(id).value));
-                localStorage.setItem('remoteVerilogFiles', JSON.stringify(remoteVerilogFiles));
+                // Source drafts are stored per project by saveWorkspaceDraft; avoid rewriting all HDL on every keystroke.
                 localStorage.setItem('activeMode', activeMode);
             } catch(e) {}
         }
@@ -853,8 +853,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                     const val = localStorage.getItem(id);
                     if(val !== null) document.getElementById(id).value = val;
                 });
-                const savedFiles = localStorage.getItem('remoteVerilogFiles');
-                if(savedFiles) { log('[WORKSPACE] Reload project files before building; previous session source is not trusted.', 'info'); }
+                // Project sources are restored only after GitHub refresh and draft merge.
                 const savedMode = localStorage.getItem('activeMode');
                 if(savedMode) { activeMode = savedMode; switchTab(); }
             } catch(e) {}
