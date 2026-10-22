@@ -493,78 +493,149 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
         }
 
         // Preserve GitHub URLs for discovery; normalize only when fetching source files.
-        document.getElementById('cfg-base').addEventListener('change', saveState);
+        document.getElementById('cfg-base').addEventListener('change', invalidateWorkspace);
 
-        // GitHub project discovery uses the public REST API; no token or backend needed.
-        // Only fetch small source/constraint files, not Git LFS blobs or generated outputs.
+        // Workspace state is committed only after every selected file has loaded.
+        let workspaceRevision = 0;
+        let workspaceReady = false;
+        let workspaceIdentity = '';
+        function invalidateWorkspace() {
+            workspaceRevision++;
+            workspaceReady = false;
+            workspaceIdentity = '';
+            remoteVerilogFiles = {};
+            activeRepoVFile = null;
+            updateVFileDropdown();
+            document.getElementById('code-xdc-repo').value = '';
+            document.getElementById('btn-flash').disabled = true;
+            pipelineState = { fasmStr: null, framesStr: null, bitstream: null };
+            saveState();
+        }
+        function workspacePaths() {
+            return document.getElementById('cfg-v-files').value.split(',').map(x => x.trim()).filter(Boolean);
+        }
+        function projectBase() {
+            return normalizeGithubUrl(document.getElementById('cfg-base').value.trim());
+        }
+        async function fetchWorkspaceFiles(base, paths) {
+            const files = {};
+            const unique = [...new Set(paths)];
+            if (unique.length !== paths.length) throw new Error('Duplicate source path in selection');
+            await Promise.all(unique.map(async filename => {
+                const res = await fetch(buildUrl(base, filename));
+                if (!res.ok) throw new Error('HTTP ' + res.status + ' fetching ' + filename);
+                files[filename] = await res.text();
+            }));
+            return files;
+        }
+        function commitWorkspace(files, xdcText, identity) {
+            remoteVerilogFiles = files;
+            document.getElementById('code-xdc-repo').value = xdcText;
+            workspaceReady = true;
+            workspaceIdentity = identity;
+            updateVFileDropdown();
+            saveState();
+        }
+        async function githubProject(input) {
+            const u = new URL(input);
+            const parts = u.pathname.split('/').filter(Boolean);
+            let owner, repo, ref, dir = '';
+            if (u.hostname === 'github.com') {
+                if (parts.length < 2) throw new Error('Enter a GitHub repository URL');
+                [owner, repo] = parts;
+            } else if (u.hostname === 'raw.githubusercontent.com') {
+                [owner, repo, ref] = parts;
+                dir = parts.slice(3).join('/');
+            } else throw new Error('Discovery supports public GitHub repositories');
+            const api = 'https://api.github.com/repos/' + encodeURIComponent(owner) + '/' + encodeURIComponent(repo);
+            const metadata = await fetch(api);
+            if (!metadata.ok) throw new Error('GitHub repository HTTP ' + metadata.status);
+            const meta = await metadata.json();
+            if (!ref) ref = meta.default_branch;
+            if (u.hostname === 'github.com' && (parts[2] === 'tree' || parts[2] === 'blob')) {
+                // Branches may contain slashes; find the longest prefix matching a real ref.
+                const tail = parts.slice(3);
+                let matched = false;
+                for (let n = tail.length; n >= 1; --n) {
+                    const candidate = tail.slice(0, n).join('/');
+                    const check = await fetch(api + '/commits/' + candidate.split('/').map(encodeURIComponent).join('%2F'));
+                    if (check.ok) {
+                        ref = candidate;
+                        dir = tail.slice(n, parts[2] === 'blob' ? -1 : undefined).join('/');
+                        matched = true;
+                        break;
+                    }
+                }
+                if (!matched) throw new Error('Cannot resolve GitHub branch or tag');
+            }
+            return { owner, repo, ref, dir, api };
+        }
         document.getElementById('btn-discover').onclick = async () => {
             const btn = document.getElementById('btn-discover');
             const status = document.getElementById('discover-status');
+            const revision = ++workspaceRevision;
             btn.disabled = true;
-            status.textContent = 'Reading repository tree...';
+            status.textContent = 'Discovering files...';
+            workspaceReady = false;
             try {
-                const input = document.getElementById('cfg-base').value.trim();
-                const u = new URL(input);
-                const parts = u.pathname.split('/').filter(Boolean);
-                let owner, repo, ref, dir = '';
-                if (u.hostname === 'github.com') {
-                    if (parts.length < 2) throw new Error('Enter a GitHub repository URL');
-                    [owner, repo] = parts;
-                    if (parts[2] === 'tree' || parts[2] === 'blob') {
-                        ref = parts[3];
-                        dir = parts.slice(4, parts[2] === 'blob' ? -1 : undefined).join('/');
-                    }
-                } else if (u.hostname === 'raw.githubusercontent.com') {
-                    [owner, repo, ref] = parts;
-                    dir = parts.slice(3).join('/');
-                } else throw new Error('Discovery supports public GitHub repositories');
-                if (!owner || !repo) throw new Error('Invalid repository URL');
-                const api = 'https://api.github.com/repos/' + encodeURIComponent(owner) + '/' + encodeURIComponent(repo);
-                const metaResponse = await fetch(api);
-                if (!metaResponse.ok) throw new Error('GitHub repository lookup: HTTP ' + metaResponse.status);
-                const meta = await metaResponse.json();
-                ref ||= meta.default_branch;
-                const treeResponse = await fetch(api + '/git/trees/' + encodeURIComponent(ref) + '?recursive=1');
-                if (!treeResponse.ok) throw new Error('GitHub tree lookup: HTTP ' + treeResponse.status);
-                const tree = await treeResponse.json();
-                if (tree.truncated) log('[DISCOVERY] GitHub tree truncated; some source files may be missing.', 'warn');
+                const project = await githubProject(document.getElementById('cfg-base').value.trim());
+                const { owner, repo, ref, dir, api } = project;
+                const response = await fetch(api + '/git/trees/' + ref.split('/').map(encodeURIComponent).join('%2F') + '?recursive=1');
+                if (!response.ok) throw new Error('GitHub tree HTTP ' + response.status);
+                const tree = await response.json();
+                if (tree.truncated) throw new Error('Repository tree truncated: choose a smaller folder');
                 const entries = (tree.tree || []).filter(x => x.type === 'blob' && (!dir || x.path.startsWith(dir + '/')));
-                // Folder names (including TESTS) are not evidence that a source is a testbench.
-                // When a specific folder is requested, include every HDL file in it.
-                // At repository root, skip only conventionally named testbench files.
-                const verilog = entries.filter(x => {
-                    if (!/\.(v|sv)$/i.test(x.path) || x.size >= 2000000) return false;
-                    if (dir) return true;
-                    const filename = x.path.split('/').pop();
-                    return !/^(tb[_-]|testbench[_-]|.*[_-]tb\.(v|sv)$)/i.test(filename);
+                const hdl = entries.filter(x => /\.(v|sv)$/i.test(x.path) && x.size < 2000000);
+                const xdc = entries.filter(x => /\.xdc$/i.test(x.path) && x.size < 2000000);
+                if (!hdl.length) throw new Error('No Verilog source found in selected folder');
+                // A whole repository often contains independent examples. Prefer the folder
+                // containing the first XDC, rather than compiling unrelated projects together.
+                let selected = hdl;
+                let chosenXdc;
+                if (xdc.length) {
+                    chosenXdc = xdc.find(x => dir && x.path.substring(0,x.path.lastIndexOf('/')) === dir)
+                        || xdc.find(x => /(^|\/)(top|urbana|constraints|serv)\.xdc$/i.test(x.path))
+                        || xdc[0];
+                    const folder = chosenXdc.path.split('/').slice(0,-1).join('/');
+                    if (!dir && folder) {
+                        selected = hdl.filter(x => x.path.startsWith(folder + '/'));
+                        if (!selected.length) selected = hdl;
+                        if (selected.length < hdl.length)
+                            log('[DISCOVERY] Multiple projects found; selected HDL near ' + chosenXdc.path, 'info');
+                    }
+                }
+                selected = selected.filter(x => {
+                    const name = x.path.split('/').pop();
+                    return !/^(tb[_-]|testbench[_-]|.*[_-]tb\.(v|sv)$)/i.test(name);
                 });
-                const constraints = entries.filter(x => /\.xdc$/i.test(x.path) && x.size < 2000000);
-                if (!verilog.length) throw new Error('No Verilog source found in selected folder');
-                // A filename is only a hint; never silently claim an inferred top module is correct.
-                const ordered = [...verilog].sort((a,b) => {
-                    const rank = x => /(^|\/)(top|.*_top|serv_top)\.(sv|v)$/i.test(x.path) ? 0 : 1;
-                    return rank(a) - rank(b) || a.path.localeCompare(b.path);
-                });
+                if (!selected.length) throw new Error('No synthesizable HDL found in selected project');
+                const ordered = selected.sort((a,b) =>
+                    ((/(^|\/)(top|.*_top)\.(sv|v)$/i.test(a.path) ? 0 : 1)
+                    - (/(^|\/)(top|.*_top)\.(sv|v)$/i.test(b.path) ? 0 : 1))
+                    || a.path.localeCompare(b.path));
                 const root = 'https://raw.githubusercontent.com/' + owner + '/' + repo + '/' + ref;
+                const names = ordered.map(x => x.path);
+                const files = await fetchWorkspaceFiles(root, names);
+                if (!chosenXdc) throw new Error('No .xdc found; select or enter constraints manually');
+                const xdcResponse = await fetch(buildUrl(root, chosenXdc.path));
+                if (!xdcResponse.ok) throw new Error('HTTP ' + xdcResponse.status + ' fetching ' + chosenXdc.path);
+                const constraints = await xdcResponse.text();
+                if (revision !== workspaceRevision) return;
                 document.getElementById('cfg-base').value = root;
-                document.getElementById('cfg-v-files').value = ordered.map(x => x.path).join(', ');
-                if (constraints.length) {
-                    const likely = constraints.find(x => /(^|\/)(serv|urbana|top|constraints)\.xdc$/i.test(x.path)) || constraints[0];
-                    document.getElementById('cfg-xdc-file').value = likely.path;
+                document.getElementById('cfg-v-files').value = names.join(', ');
+                document.getElementById('cfg-xdc-file').value = chosenXdc.path;
+                const first = files[names[0]] || '';
+                const modules = [...first.matchAll(/\bmodule\s+([a-zA-Z_$][\w$]*)\b/g)];
+                if (modules.length) document.getElementById('cfg-top-repo').value = modules[0][1];
+                commitWorkspace(files, constraints, root + '|' + chosenXdc.path);
+                status.textContent = names.length + ' HDL, XDC loaded';
+                log('[DISCOVERY] Project loaded: ' + names.length + ' HDL files + ' + chosenXdc.path, 'info');
+            } catch(err) {
+                if (revision === workspaceRevision) {
+                    status.textContent = 'Discovery failed';
+                    invalidateWorkspace();
+                    log('[DISCOVERY ERROR] ' + err.message, 'error');
                 }
-                // Read the likely top module from source declarations, rather than assuming filename equals module.
-                const topSource = await fetch(buildUrl(root, ordered[0].path));
-                if (topSource.ok) {
-                    const source = await topSource.text();
-                    const match = source.match(/\bmodule\s+([a-zA-Z_$][\w$]*)\b/);
-                    if (match) document.getElementById('cfg-top-repo').value = match[1];
-                }
-                status.textContent = ordered.length + ' HDL file(s), ' + constraints.length + ' XDC found';
-                log('[DISCOVERY] Found ' + ordered.length + ' HDL files. Review top module and chosen XDC before building.', 'info');
-                saveState();
-            } catch (err) {
-                status.textContent = 'Discovery failed';
-                log('[DISCOVERY ERROR] ' + err.message, 'error');
             } finally { btn.disabled = false; }
         };
 
@@ -583,14 +654,20 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                     if(val !== null) document.getElementById(id).value = val;
                 });
                 const savedFiles = localStorage.getItem('remoteVerilogFiles');
-                if(savedFiles) { remoteVerilogFiles = JSON.parse(savedFiles); updateVFileDropdown(); }
+                if(savedFiles) { log('[WORKSPACE] Reload project files before building; previous session source is not trusted.', 'info'); }
                 const savedMode = localStorage.getItem('activeMode');
                 if(savedMode) { activeMode = savedMode; switchTab(); }
             } catch(e) {}
         }
 
-        persistIds.forEach(id => { document.getElementById(id).addEventListener('input', saveState); });
+        persistIds.forEach(id => {
+            document.getElementById(id).addEventListener('input', () => {
+                if (['cfg-base','cfg-v-files','cfg-xdc-file'].includes(id)) invalidateWorkspace();
+                else saveState();
+            });
+        });
 
+        document.getElementById('code-xdc-repo').addEventListener('input', saveState);
         document.getElementById('code-v-repo').addEventListener('input', (e) => {
             if(activeRepoVFile) { remoteVerilogFiles[activeRepoVFile] = e.target.value; saveState(); }
         });
@@ -599,38 +676,34 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
 
         document.getElementById('btn-fetch-xdc').onclick = async () => {
             const btn = document.getElementById('btn-fetch-xdc');
-            btn.disabled = true; btn.textContent = "...";
+            btn.disabled = true;
             try {
-                const base = normalizeGithubUrl(document.getElementById('cfg-base').value);
                 const path = document.getElementById('cfg-xdc-file').value.trim();
-                log(`[FETCH] Downloading ${path}...`, 'info');
-                const res = await fetch(buildUrl(base, path));
-                if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to fetch XDC.`);
-                document.getElementById('code-xdc-repo').value = await res.text();
-                log(`[FETCH] XDC loaded successfully.`);
+                const response = await fetch(buildUrl(projectBase(), path));
+                if (!response.ok) throw new Error('HTTP ' + response.status + ' fetching ' + path);
+                document.getElementById('code-xdc-repo').value = await response.text();
+                workspaceReady = false; // Revalidate source+XDC together before building.
                 saveState();
-            } catch (err) { log(`[FETCH ERROR] ${err.message}`, 'error'); } 
-            finally { btn.disabled = false; btn.textContent = "Fetch XDC ↓"; }
+                log('[FETCH] XDC loaded: ' + path);
+            } catch(err) { log('[FETCH ERROR] ' + err.message, 'error'); }
+            finally { btn.disabled = false; }
         };
-
         document.getElementById('btn-fetch-v').onclick = async () => {
             const btn = document.getElementById('btn-fetch-v');
-            btn.disabled = true; btn.textContent = "...";
+            btn.disabled = true;
             try {
-                const base = normalizeGithubUrl(document.getElementById('cfg-base').value);
-                const fileList = document.getElementById('cfg-v-files').value.split(',').map(f => f.trim()).filter(f => f.length > 0);
-                remoteVerilogFiles = {}; 
-                for (const filename of fileList) {
-                    log(`[FETCH] Downloading ${filename}...`);
-                    const res = await fetch(buildUrl(base, filename));
-                    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to fetch ${filename}`);
-                    remoteVerilogFiles[filename] = await res.text();
-                }
-                log(`[FETCH] ${Object.keys(remoteVerilogFiles).length} Verilog files loaded into editor.`);
+                const paths = workspacePaths();
+                if (!paths.length) throw new Error('Choose Verilog files first');
+                const files = await fetchWorkspaceFiles(projectBase(), paths);
+                // Commit only when all selected files have downloaded.
+                remoteVerilogFiles = files;
                 updateVFileDropdown();
+                workspaceReady = Boolean(document.getElementById('code-xdc-repo').value.trim());
+                workspaceIdentity = projectBase() + '|' + document.getElementById('cfg-xdc-file').value.trim();
                 saveState();
-            } catch(err) { log(`[FETCH ERROR] ${err.message}`, 'error'); }
-            finally { btn.disabled = false; btn.textContent = "Fetch ↓"; }
+                log('[FETCH] Loaded ' + paths.length + ' HDL files atomically.');
+            } catch(err) { log('[FETCH ERROR] ' + err.message, 'error'); }
+            finally { btn.disabled = false; }
         };
 
         function updateVFileDropdown() {
@@ -725,15 +798,14 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                         // YoWASP's input files live in a flat virtual working directory.
                         // GitHub paths are identifiers, not directories created inside WASI.
                         const mountedFiles = {};
+                        let sourceIndex = 0;
                         for (const [repoPath, source] of Object.entries(verilogFiles)) {
                             const name = repoPath.split('/').pop();
-                            if (!/^[A-Za-z0-9_.$-]+[.](v|sv)$/i.test(name)) {
+                            if (!/^[A-Za-z0-9_.$-]+[.](v|sv)$/i.test(name))
                                 throw new Error('Unsupported HDL filename: ' + repoPath);
-                            }
-                            if (Object.prototype.hasOwnProperty.call(mountedFiles, name)) {
-                                throw new Error('Multiple HDL files share filename ' + name + '; rename one before building.');
-                            }
-                            mountedFiles[name] = source;
+                            const mountedName = 'source_' + (sourceIndex++) + '.' + name.split('.').pop();
+                            mountedFiles[mountedName] = source;
+                            self.postMessage({ type: 'log', text: '[WORKSPACE] ' + repoPath + ' -> ' + mountedName });
                         }
                         const readCommands = Object.keys(mountedFiles).map(filename => 'read_verilog -sv ' + filename).join('; ');
                         const script = [
@@ -793,7 +865,8 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                     const expectedFiles = document.getElementById('cfg-v-files').value.split(',').map(f => f.trim()).filter(f => f.length > 0);
                     if (expectedFiles.length === 0) throw new Error("Please specify at least one Verilog file.");
 
-                    const missingFiles = expectedFiles.filter(f => !remoteVerilogFiles[f]);
+                    if (!workspaceReady) throw new Error('Workspace not loaded. Discover project, or fetch source and XDC.');
+                    const missingFiles = expectedFiles.filter(f => !Object.prototype.hasOwnProperty.call(remoteVerilogFiles,f));
                     if (missingFiles.length > 0) throw new Error(`Missing fetched content for: ${missingFiles.join(', ')}. Please click 'Fetch ↓' first.`);
                     expectedFiles.forEach(f => { verilogPayload[f] = remoteVerilogFiles[f]; });
                 }
