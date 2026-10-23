@@ -217,9 +217,8 @@ function runNextpnr(msg) {
             // pipeline silently hung forever.
             if (!imports.wasi_snapshot_preview1) imports.wasi_snapshot_preview1 = {};
             imports.wasi_snapshot_preview1.proc_exit = function(code) {
-                // Intentional no-op: the Worker's onExit/postRun handle shutdown.
-                // Do NOT call self.close() here — that would kill the worker
-                // before handleSuccess can read /out.fasm from the virtual FS.
+                exitCode = code;
+                // Don't close the worker: postRun must still read /out.fasm.
             };
             // ---------------------------------------------------------------------
 
@@ -263,7 +262,12 @@ function runNextpnr(msg) {
         //         The successHandled guard (reset in FIX 1) makes this safe —
         //         whichever fires first wins; the second call is a no-op.
         postRun: function() {
-            // postRun may precede the exit-status callback. Do not announce success here.
+            // Emscripten can finish normally without invoking onExit.
+            // Preserve any explicit nonzero WASI exit instead of claiming success.
+            if (exitCode !== null && exitCode !== 0)
+                failOnce('NextPNR exited with code ' + exitCode + '; ' + diagnosticSummary());
+            else
+                handleSuccess();
         },
 
         onExit: function(code) {
