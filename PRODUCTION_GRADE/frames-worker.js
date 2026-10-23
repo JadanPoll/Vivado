@@ -44,7 +44,7 @@ function runFrames2Bit(msg) {
         importScripts(source);
     } catch (cdnError) {
         // jsDelivr may lag immutable GitHub commits; use the exact same revision.
-        const revision = /@([a-f0-9]{40})\\//.exec(msg.baseUrl)?.[1];
+        const revision = msg.baseUrl.split('@')[1]?.split('/')[0];
         if (!revision) {
             self.postMessage({ type: 'error', message: 'Frames2Bit script unavailable at ' + source + ': ' + cdnError });
             return;
