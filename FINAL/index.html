@@ -60,7 +60,7 @@
         #build-history {font-size:.82rem;line-height:1.6;margin:8px 0;color:inherit;}
         .layout-grip {resize:vertical;overflow:auto;min-height:140px;}
     </style>
-    <script src="https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@19508433ac34ada4366203e134d7445f6b1ebab3/PRODUCTION_GRADE/ftdi-jtag.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@c64027c035e4c2816afef5d02c8f127056e892d1/PRODUCTION_GRADE/ftdi-jtag.js"></script>
 </head>
 <body>
 
@@ -338,7 +338,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                        /^(\d+\.\d+\.\d+\.\d+)$/.test(location.hostname);   // covers LAN IPs like 192.168.x.x
 
         const baseUrl = new URL('./', import.meta.url).href;   // directory of this script
-        const CDN_BASE = 'https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@19508433ac34ada4366203e134d7445f6b1ebab3/PRODUCTION_GRADE/';
+        const CDN_BASE = 'https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@c64027c035e4c2816afef5d02c8f127056e892d1/PRODUCTION_GRADE/';
 
         // Helper: return correct URL for an asset (local during development, CDN otherwise)
         function assetUrl(filename) {
