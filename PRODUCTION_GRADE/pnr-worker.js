@@ -47,6 +47,15 @@ function runNextpnr(msg) {
     recentDiagnostics = [];
     // ---------------------------------------------------------------------------
 
+    // Emscripten's generated runtime sends stderr to console.error rather than
+    // Module.printErr. Its WASM __abort_js can call abort(\"\") with no reason.
+    // Capture stderr and keep the actual JS/WASM abort stack visible.
+    const originalConsoleError = console.error;
+    console.error = function(...args) {
+        recordDiagnostic('NEXTPNR CONSOLE', args.map(String).join(' '));
+        originalConsoleError.apply(console, args);
+    };
+
     self._baseUrl = msg.baseUrl;
 
     // --- FIX 4: Capture the transferred buffer into a local before any async --
@@ -276,7 +285,8 @@ function runNextpnr(msg) {
         },
 
         onAbort: function(what) {
-            const reason = String(what ?? '(no abort reason supplied by WASM)');
+            const reason = what ? String(what) : '(WASM invoked abort with empty reason)';
+            recordDiagnostic('NEXTPNR ABORT STACK', new Error(reason).stack || reason);
             failOnce('NextPNR aborted: ' + reason + '; ' + diagnosticSummary());
         }
     };
