@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/headless-pnr-matrix.yml'
       - 'tests/headless-pnr-*.cjs'
+      - 'PRODUCTION_GRADE/pnr-worker.js'
 jobs:
   pnr-matrix:
     runs-on: ubuntu-latest
