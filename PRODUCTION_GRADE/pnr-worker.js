@@ -210,9 +210,6 @@ function runNextpnr(msg) {
     }
     // =========================================================================
 
-    // Expose the *actual* sanitized inputs sent into nextpnr, even on WASM abort.
-    self.postMessage({ type: 'pnr_inputs', filteredXdc: filteredXdc });
-
     self.Module = {
         noInitialRun: false,
         wasmBinary: wasmBuffer,   // FIX 4: use the captured local
