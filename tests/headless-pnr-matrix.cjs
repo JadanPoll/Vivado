@@ -61,12 +61,12 @@ function runPnr(dir,slug,variant='original',xdcText=null){
  // Diagnose parseXdc failures without resynthesizing or changing netlist.
  const blink='PRODUCTION_GRADE/DEFAULTS/04_blink';
  const originalXdc=fs.readFileSync(path.join(root,blink,'top.xdc'),'utf8');
- const lines=originalXdc.split(/\\r?\\n/);
+ const lines=originalXdc.split(/\r?\n/);
  const variants={
-   no_create_clock:lines.filter(l=>!l.trim().startsWith('create_clock')).join('\\n'),
-   clock_only:lines.filter(l=>l.includes('get_ports {clk}')||l.trim().startsWith('create_clock')).join('\\n'),
-   led_only:lines.filter(l=>l.includes('get_ports {LED}')).join('\\n'),
-   no_clock_pin:lines.filter(l=>!l.includes('PACKAGE_PIN N15')).join('\\n'),
+   no_create_clock:lines.filter(l=>!l.trim().startsWith('create_clock')).join('\n'),
+   clock_only:lines.filter(l=>l.includes('get_ports {clk}')||l.trim().startsWith('create_clock')).join('\n'),
+   led_only:lines.filter(l=>l.includes('get_ports {LED}')).join('\n'),
+   no_clock_pin:lines.filter(l=>!l.includes('PACKAGE_PIN N15')).join('\n'),
    empty_xdc:'',
  };
  for(const [variant,xdc] of Object.entries(variants)){
