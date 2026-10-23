@@ -9,8 +9,28 @@
 //   6. applyFasmFix IN_ONLY comment added for dot-in-name edge case
 // =============================================================================
 
-let lastError   = "Unknown error during initialization.";
+let lastError   = "(no nextpnr stderr received)";
+let bootStage = "not started";
+let recentDiagnostics = [];
+function recordDiagnostic(source, value) {
+    const line = `[${source}] ${String(value)}`;
+    recentDiagnostics.push(line);
+    if (recentDiagnostics.length > 24) recentDiagnostics.shift();
+    lastError = line;
+    self.postMessage({ type: "log", text: line });
+}
+function diagnosticSummary() {
+    return `stage=${bootStage}; ${recentDiagnostics.length ? recentDiagnostics.join(" | ") : "no diagnostic emitted by nextpnr"}`;
+}
 let successHandled = false;
+let finished = false;
+let exitCode = null;
+function failOnce(message) {
+    if (finished) return;
+    finished = true;
+    self.postMessage({ type: 'error', message });
+    self.postMessage({ type: 'done' });
+}
 
 self.onmessage = function(event) {
     const msg = event.data;
@@ -20,7 +40,11 @@ self.onmessage = function(event) {
 function runNextpnr(msg) {
     // --- FIX 1: Reset run-level state so a reused worker starts clean ----------
     successHandled = false;
-    lastError      = "Unknown error during initialization.";
+    finished = false;
+    exitCode = null;
+    lastError      = "(no nextpnr stderr received)";
+    bootStage = "processing inputs";
+    recentDiagnostics = [];
     // ---------------------------------------------------------------------------
 
     self._baseUrl = msg.baseUrl;
@@ -48,7 +72,7 @@ function runNextpnr(msg) {
     // Count BEFORE scrub
     let scopeInfoCount = 0;
     for (const modName in netlist.modules) {
-        const cells = netlist.modules[modName].cells;
+        const cells = netlist.modules[modName].cells || {};
         for (const cellName in cells) {
             if (cells[cellName].type === '$scopeinfo') scopeInfoCount++;
         }
@@ -56,7 +80,7 @@ function runNextpnr(msg) {
 
     // Now scrub
     for (const modName in netlist.modules) {
-        const cells = netlist.modules[modName].cells;
+        const cells = netlist.modules[modName].cells || {};
         for (const cellName in cells) {
             if (cells[cellName].type === '$scopeinfo') delete cells[cellName];
         }
@@ -70,17 +94,16 @@ function runNextpnr(msg) {
 
 
         
-        if (netlist.modules) {
-            for (const mod in netlist.modules) {
-                if (netlist.modules[mod].ports) {
-                    Object.keys(netlist.modules[mod].ports).forEach(p => validPorts.add(p));
-                }
-            }
-        }
+        const topModules = Object.entries(netlist.modules || {}).filter(([name, m]) => m.attributes && (m.attributes.top === 1 || m.attributes.top === '1' || m.attributes.top === '00000000000000000000000000000001'));
+        if (topModules.length !== 1) throw new Error('Expected exactly one Yosys top module, found ' + topModules.length);
+        const topPorts = topModules[0][1].ports || {};
+        Object.keys(topPorts).forEach(p => validPorts.add(p));
 
         let droppedPorts      = [];
         let droppedDirectives = 0;
         let appliedCount      = 0;
+        const assignedPins = new Map();
+        const assignedPorts = new Map();
 
         filteredXdc = msg.xdc.split('\n').map(line => {
             let trimmed = line.trim();
@@ -139,6 +162,16 @@ function runNextpnr(msg) {
                     droppedPorts.push(fullPort);
                     return false;
                 }
+                const pin = trimmed.match(/PACKAGE_PIN\s+([A-Z]+\d+)/i);
+                if (pin) {
+                    const physical = pin[1].toUpperCase();
+                    const previousPort = assignedPins.get(physical);
+                    const previousPin = assignedPorts.get(fullPort);
+                    if (previousPort && previousPort !== fullPort) throw new Error(`Pin ${physical} assigned to both ${previousPort} and ${fullPort}`);
+                    if (previousPin && previousPin !== physical) throw new Error(`Port ${fullPort} assigned to both ${previousPin} and ${physical}`);
+                    assignedPins.set(physical, fullPort);
+                    assignedPorts.set(fullPort, physical);
+                }
                 appliedCount++;
                 return true;
             }
@@ -163,7 +196,8 @@ function runNextpnr(msg) {
         }
 
     } catch (e) {
-        self.postMessage({ type: 'log', text: `[PNR] XDC Filter bypassed (parse error): ${e.message}` });
+        failOnce(`[PNR] Netlist/XDC validation failed: ${e.message}`);
+        return;
     }
     // =========================================================================
 
@@ -189,12 +223,15 @@ function runNextpnr(msg) {
             };
             // ---------------------------------------------------------------------
 
+            bootStage = "instantiating nextpnr WASM";
             WebAssembly.instantiate(wasmBuffer, imports)   // FIX 4: local ref
                 .then(function(output) {
+                    bootStage = "WASM instantiated; entering nextpnr runtime";
                     successCallback(output.instance, output.module);
                 })
                 .catch(function(err) {
-                    self.postMessage({ type: 'error', message: `WASM Boot Error: ${err}` });
+                    recordDiagnostic('WASM BOOT ERROR', err && (err.stack || err.message) || err);
+                    failOnce(`WASM Boot Error: ${diagnosticSummary()}`);
                 });
 
             return {};
@@ -210,43 +247,44 @@ function runNextpnr(msg) {
         ],
 
         preRun: function() {
+    bootStage = "writing chipdb/netlist/XDC into WASM filesystem";
     self.FS.writeFile('/chipdb.bin', new Uint8Array(msg.chipdbBuffer));
     self.FS.writeFile('/design.json', cleanedJsonStr);  // $scopeinfo already stripped
     self.FS.writeFile('/design.xdc', filteredXdc);
+    bootStage = 'nextpnr executable running';
         },
 
         print:    function(text) { self.postMessage({ type: 'log', text }); },
         printErr: function(text) {
-            lastError = text;
-            self.postMessage({ type: 'log', text });
+            recordDiagnostic('NEXTPNR STDERR', text);
         },
 
         // FIX 2: Both postRun and onExit(0) call handleSuccess().
         //         The successHandled guard (reset in FIX 1) makes this safe —
         //         whichever fires first wins; the second call is a no-op.
-        postRun: function() { handleSuccess(); },
+        postRun: function() {
+            // postRun may precede the exit-status callback. Do not announce success here.
+        },
 
         onExit: function(code) {
-            if (code === 0) {
-                handleSuccess();
-            } else {
-                self.postMessage({
-                    type: 'error',
-                    message: `NextPNR exited with code ${code}. Last error: ${lastError}`
-                });
-                self.postMessage({ type: 'done' });
-            }
+            exitCode = code;
+            if (code === 0) handleSuccess();
+            else failOnce(`NextPNR exited with code ${code}; ${diagnosticSummary()}`);
         },
 
         onAbort: function(what) {
             const reason = String(what ?? '(no abort reason supplied by WASM)');
-            self.postMessage({ type: 'error', message:
-                'NextPNR aborted: ' + reason + '. Last stderr: ' + lastError });
-            self.postMessage({ type: 'done' });
+            failOnce('NextPNR aborted: ' + reason + '; ' + diagnosticSummary());
         }
     };
 
-    importScripts(self._baseUrl + 'nextpnr-xilinx.js');
+    bootStage = 'loading nextpnr JavaScript runtime';
+    try {
+        importScripts(self._baseUrl + 'nextpnr-xilinx.js');
+    } catch (err) {
+        recordDiagnostic('RUNTIME LOAD ERROR', err && (err.stack || err.message) || err);
+        failOnce(diagnosticSummary());
+    }
 }
 
 // =============================================================================
@@ -254,7 +292,7 @@ function runNextpnr(msg) {
 // =============================================================================
 function handleSuccess() {
     // FIX 2: guard — only the first caller wins (postRun vs onExit race)
-    if (successHandled) return;
+    if (successHandled || finished) return;
     successHandled = true;
 
     try {
@@ -263,17 +301,16 @@ function handleSuccess() {
         // FIX 3: was using key 'message' — main thread listens for 'text'
         self.postMessage({ type: 'log', text: '[FASM] Generated ' + rawFasm.length + ' characters; full output available for download.' });
 
+        if (!rawFasm.trim()) throw new Error('Empty FASM output');
         const fixedFasm = applyFasmFix(rawFasm);
+        if (!fixedFasm.trim()) throw new Error('Empty FASM after filtering');
         self.postMessage({ type: 'fasm_fixed', data: fixedFasm });
+        finished = true;
+        self.postMessage({ type: 'done' });
 
     } catch (err) {
-        self.postMessage({
-            type: 'error',
-            message: "Failed to read output FASM: " + err.toString()
-        });
+        failOnce('Failed to read output FASM: ' + err.toString());
     }
-
-    self.postMessage({ type: 'done' });
 }
 
 // =============================================================================
