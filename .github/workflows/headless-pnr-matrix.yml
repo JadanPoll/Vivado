@@ -1,6 +1,10 @@
 name: Headless PNR Matrix
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/headless-pnr-matrix.yml'
+      - 'tests/headless-pnr-*.cjs'
   push:
     branches: [investigate/headless-pnr]
     paths:
