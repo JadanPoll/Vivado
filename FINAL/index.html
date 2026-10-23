@@ -341,7 +341,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
         const baseUrl = new URL('./', import.meta.url).href;   // directory of this script
         const CDN_BASE = 'https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@ff8202507185f80e22bd387521cdbe9a974337f4/PRODUCTION_GRADE/';
 
-        const ENGINE_REVISION = CDN_BASE.match(/@([0-9a-f]{40})\\//)?.[1] || 'unknown';
+        const ENGINE_REVISION = CDN_BASE.match(/@([0-9a-f]{40})\//)?.[1] || 'unknown';
         document.getElementById('engine-revision').textContent = 'Engine ' + ENGINE_REVISION.slice(0, 7);
 
         // Helper: return correct URL for an asset (local during development, CDN otherwise)
