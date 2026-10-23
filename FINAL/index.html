@@ -69,6 +69,7 @@
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
         <button id="theme-toggle" class="action-btn gray" style="padding:6px 10px;font-size:.85rem">Dark mode</button>
         <span id="workbench-status" role="status" style="font-size:.85rem">Ready · No current bitstream</span>
+        <span id="engine-revision" style="font-family:monospace;font-size:.75rem;color:#9cdcfe" title="Pinned FPGA pipeline revision">Engine c64027c</span>
     </div>
     
     <div class="tabs">
@@ -1010,6 +1011,15 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
             const res = await fetch(scriptUrl);
             if (!res.ok) throw new Error(`HTTP ${res.status} loading worker ${scriptName}`);
             let code = await res.text();
+            if (scriptName === 'pnr-worker.js') {
+                // Prevent stale CDN/cache responses from silently running the old
+                // worker. The previous worker prints "Unknown error during initialization".
+                if (!code.includes('diagnosticSummary()') || !code.includes('failOnce(')) {
+                    throw new Error('Outdated nextpnr worker loaded from ' + scriptUrl
+                        + '. Reload the latest HTML; old worker rejected.');
+                }
+                log('[VERSION] nextpnr worker verified: engine c64027c', 'info');
+            }
             
             // If pulling from remote jsDelivr, patch relative importScripts so they don't 404
             if (true) {
