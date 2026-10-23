@@ -68,6 +68,7 @@ function runNextpnr(msg) {
     // XDC FILTERING LOGIC (Vivado → nextpnr-xilinx emulation)
     // =========================================================================
     let filteredXdc = msg.xdc;
+    let primaryClockFreqMHz = null;
 
 
     let cleanedJsonStr = new TextDecoder().decode(new Uint8Array(msg.jsonBuffer)); // fallback: raw
@@ -208,6 +209,28 @@ function runNextpnr(msg) {
         failOnce(`[PNR] Netlist/XDC validation failed: ${e.message}`);
         return;
     }
+    // Translate a single basic primary-clock constraint to nextpnr's global
+    // frequency option. Some synth_xilinx netlists expose a port with no
+    // getNetByAlias entry; nextpnr's parseXdc currently terminates instead of
+    // reporting that missing alias. Global --freq avoids that lookup while
+    // retaining the requested timing target (period in ns -> MHz).
+    const clockLines = filteredXdc.split('\n').filter(l => /^\s*create_clock\b/.test(l));
+    if (clockLines.length === 1) {
+        const line = clockLines[0].trim();
+        const parsed = line.match(/^create_clock\s+-period\s+(\d+(?:\.\d+)?)(?:\s+-name\s+[\w.-]+)?\s+\[get_ports\s+\{?([\w.]+)\}?\]$/);
+        if (parsed) {
+            const period = Number(parsed[1]);
+            if (!(period > 0) || !Number.isFinite(1000 / period)) {
+                failOnce('Invalid create_clock period: ' + parsed[1]);
+                return;
+            }
+            primaryClockFreqMHz = 1000 / period;
+            filteredXdc = filteredXdc.split('\n').filter(l => l !== clockLines[0]).join('\n');
+            self.postMessage({type:'log',text:'[TIMING] Primary clock '+parsed[2]+' period '+period+' ns -> nextpnr --freq '+primaryClockFreqMHz.toPrecision(9)+' MHz; preserved target, bypassed invalid input-port net alias lookup.'});
+        }
+    }
+    // Other clock/SDC forms are left unchanged; never silently drop them.
+
     // =========================================================================
 
     self.Module = {
@@ -251,7 +274,8 @@ function runNextpnr(msg) {
             '--json',   '/design.json',
             '--xdc',    '/design.xdc',
             '--fasm',   '/out.fasm',
-            '--timing-allow-fail'
+            '--timing-allow-fail',
+            ...(primaryClockFreqMHz === null ? [] : ['--freq', String(primaryClockFreqMHz)])
         ],
 
         preRun: function() {
