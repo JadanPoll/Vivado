@@ -26,7 +26,7 @@ try {
       await page.waitForFunction(() => {
         const t=document.querySelector('#build-stage')?.textContent;
         return t==='Complete'||t==='Build failed';
-      }, null, {timeout:240000});
+      }, null, {timeout:120000});
       const stage = await page.locator('#build-stage').innerText();
       const flashEnabled = await page.locator('#btn-flash').isEnabled();
       const log = await page.evaluate(() => document.querySelector('#log').innerText);
@@ -36,6 +36,9 @@ try {
       if (name==='reference_example2' && stage!=='Complete') failed=true;
     } catch(e) {
       failed=true;
+      const stage = await page.locator('#build-stage').innerText().catch(()=> 'unknown');
+      await writeFile('pnr-repro-output/'+name+'.log',browserConsole.join('\n')+'\nRUNNER ERROR:\n'+String(e)+'\nPAGE ERRORS:\n'+errors.join('\n'));
+      await writeFile('pnr-repro-output/'+name+'.json',JSON.stringify({name,root,stage,result:'HARNESS_TIMEOUT_OR_ERROR',error:String(e),errors},null,2));
       await writeFile('pnr-repro-output/'+name+'.error.txt',String(e)+'\n'+errors.join('\n'));
       console.error(name,e);
     } finally { await page.close(); }
