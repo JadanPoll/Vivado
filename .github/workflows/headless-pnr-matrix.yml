@@ -20,7 +20,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install same YoWASP Yosys release as production
-        run: python3 -m pip install --break-system-packages yowasp-yosys==0.65.1153 brotli
+        run: python3 -m pip install --break-system-packages yowasp-yosys==0.65.0.0.post1154 brotli
       - name: Decompress pinned FPGA database
         run: |
           mkdir -p pnr-repro-output
