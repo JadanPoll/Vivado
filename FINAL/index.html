@@ -201,7 +201,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
     </div>
     
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-        <strong>Live build output</strong><span id="build-stage" style="font-size:.82rem">Idle</span>
+        <strong>Live build output</strong><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span id="build-stage" style="font-size:.82rem">Idle</span><button id="btn-copy-log" type="button" class="action-btn gray" style="padding:6px 12px;font-size:.82rem" title="Copy complete session log, including lines scrolled out of view">Copy Log</button><span id="copy-log-status" role="status" aria-live="polite" style="font-size:.78rem"></span></div>
     </div>
     <div id="build-history" aria-label="Recent build durations"></div>
     <pre id="log" class="layout-grip">System Ready.\n</pre>
@@ -418,6 +418,41 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
         };
 
         const logEl = document.getElementById('log');
+        // Keep the complete session log even though the visible console only renders
+        // the newest 500 entries for responsiveness.
+        const fullLog = [logEl.textContent];
+        const copyLogButton = document.getElementById('btn-copy-log');
+        const copyLogStatus = document.getElementById('copy-log-status');
+        copyLogButton.addEventListener('click', async () => {
+            const content = fullLog.join('');
+            copyLogButton.disabled = true;
+            copyLogStatus.textContent = 'Copying...';
+            try {
+                if (navigator.clipboard && window.isSecureContext) {
+                    await navigator.clipboard.writeText(content);
+                } else {
+                    // Support previews that don't expose the asynchronous Clipboard API.
+                    const field = document.createElement('textarea');
+                    field.value = content;
+                    field.setAttribute('readonly', '');
+                    field.style.cssText = 'position:fixed;left:-9999px;top:0';
+                    document.body.appendChild(field);
+                    field.select();
+                    try {
+                        if (!document.execCommand('copy')) throw new Error('Browser denied copy');
+                    } finally {
+                        field.remove();
+                    }
+                }
+                copyLogStatus.textContent = 'Copied complete log (' + content.length.toLocaleString() + ' characters)';
+                copyLogButton.textContent = 'Copied!';
+            } catch (error) {
+                copyLogStatus.textContent = 'Copy failed: ' + (error.message || error);
+                copyLogButton.textContent = 'Copy Log';
+            } finally {
+                copyLogButton.disabled = false;
+            }
+        });
         const persistIds = [
             'cfg-top-editor', 'code-verilog', 'code-xdc',
             'cfg-base', 'cfg-top-repo', 'cfg-v-files', 'cfg-xdc-file', 'code-xdc-repo'
@@ -427,6 +462,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
         function log(msg, cls = '') {
             const time = new Date().toISOString().substring(11, 23);
             const textStr = `[${time}] ${msg}`;
+            fullLog.push(textStr + '\n');
 
             if (cls === 'error') console.error(textStr);
             else if (cls === 'warn') console.warn(textStr);
