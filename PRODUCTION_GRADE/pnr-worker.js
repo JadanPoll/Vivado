@@ -9,7 +9,19 @@
 //   6. applyFasmFix IN_ONLY comment added for dot-in-name edge case
 // =============================================================================
 
-let lastError   = "Unknown error during initialization.";
+let lastError   = "(no nextpnr stderr received)";
+let bootStage = "not started";
+let recentDiagnostics = [];
+function recordDiagnostic(source, value) {
+    const line = `[${source}] ${String(value)}`;
+    recentDiagnostics.push(line);
+    if (recentDiagnostics.length > 24) recentDiagnostics.shift();
+    lastError = line;
+    self.postMessage({ type: "log", text: line });
+}
+function diagnosticSummary() {
+    return `stage=${bootStage}; ${recentDiagnostics.length ? recentDiagnostics.join(" | ") : "no diagnostic emitted by nextpnr"}`;
+}
 let successHandled = false;
 
 self.onmessage = function(event) {
@@ -20,7 +32,9 @@ self.onmessage = function(event) {
 function runNextpnr(msg) {
     // --- FIX 1: Reset run-level state so a reused worker starts clean ----------
     successHandled = false;
-    lastError      = "Unknown error during initialization.";
+    lastError      = "(no nextpnr stderr received)";
+    bootStage = "processing inputs";
+    recentDiagnostics = [];
     // ---------------------------------------------------------------------------
 
     self._baseUrl = msg.baseUrl;
@@ -189,12 +203,16 @@ function runNextpnr(msg) {
             };
             // ---------------------------------------------------------------------
 
+            bootStage = "instantiating nextpnr WASM";
             WebAssembly.instantiate(wasmBuffer, imports)   // FIX 4: local ref
                 .then(function(output) {
+                    bootStage = "WASM instantiated; entering nextpnr runtime";
                     successCallback(output.instance, output.module);
                 })
                 .catch(function(err) {
-                    self.postMessage({ type: 'error', message: `WASM Boot Error: ${err}` });
+                    recordDiagnostic('WASM BOOT ERROR', err && (err.stack || err.message) || err);
+                    self.postMessage({ type: 'error', message: `WASM Boot Error: ${diagnosticSummary()}` });
+                    self.postMessage({ type: 'done' });
                 });
 
             return {};
@@ -210,15 +228,16 @@ function runNextpnr(msg) {
         ],
 
         preRun: function() {
+    bootStage = "writing chipdb/netlist/XDC into WASM filesystem";
     self.FS.writeFile('/chipdb.bin', new Uint8Array(msg.chipdbBuffer));
     self.FS.writeFile('/design.json', cleanedJsonStr);  // $scopeinfo already stripped
     self.FS.writeFile('/design.xdc', filteredXdc);
+    bootStage = 'nextpnr executable running';
         },
 
         print:    function(text) { self.postMessage({ type: 'log', text }); },
         printErr: function(text) {
-            lastError = text;
-            self.postMessage({ type: 'log', text });
+            recordDiagnostic('NEXTPNR STDERR', text);
         },
 
         // FIX 2: Both postRun and onExit(0) call handleSuccess().
@@ -232,7 +251,7 @@ function runNextpnr(msg) {
             } else {
                 self.postMessage({
                     type: 'error',
-                    message: `NextPNR exited with code ${code}. Last error: ${lastError}`
+                    message: `NextPNR exited with code ${code}; ${diagnosticSummary()}`
                 });
                 self.postMessage({ type: 'done' });
             }
@@ -241,12 +260,19 @@ function runNextpnr(msg) {
         onAbort: function(what) {
             const reason = String(what ?? '(no abort reason supplied by WASM)');
             self.postMessage({ type: 'error', message:
-                'NextPNR aborted: ' + reason + '. Last stderr: ' + lastError });
+                'NextPNR aborted: ' + reason + '; ' + diagnosticSummary() });
             self.postMessage({ type: 'done' });
         }
     };
 
-    importScripts(self._baseUrl + 'nextpnr-xilinx.js');
+    bootStage = 'loading nextpnr JavaScript runtime';
+    try {
+        importScripts(self._baseUrl + 'nextpnr-xilinx.js');
+    } catch (err) {
+        recordDiagnostic('RUNTIME LOAD ERROR', err && (err.stack || err.message) || err);
+        self.postMessage({ type: 'error', message: diagnosticSummary() });
+        self.postMessage({ type: 'done' });
+    }
 }
 
 // =============================================================================
