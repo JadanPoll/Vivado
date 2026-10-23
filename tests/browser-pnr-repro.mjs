@@ -13,7 +13,8 @@ try {
   for (const [name, root] of cases) {
     const page = await browser.newPage();
     const errors = [];
-    page.on('console', m => { if (m.type()==='error') errors.push(m.text()); });
+    const browserConsole = [];
+    page.on('console', m => { browserConsole.push('['+m.type()+'] '+m.text()); if (m.type()==='error') errors.push(m.text()); });
     page.on('pageerror', e => errors.push(String(e)));
     const verilog = await readFile(resolve(root,'top.v'),'utf8');
     const xdc = await readFile(resolve(root,'top.xdc'),'utf8');
@@ -29,7 +30,7 @@ try {
       const stage = await page.locator('#build-stage').innerText();
       const flashEnabled = await page.locator('#btn-flash').isEnabled();
       const log = await page.evaluate(() => document.querySelector('#log').innerText);
-      await writeFile('pnr-repro-output/'+name+'.log',log+'\nPAGE ERRORS:\n'+errors.join('\n'));
+      await writeFile('pnr-repro-output/'+name+'.log',browserConsole.join('\n')+'\nVISIBLE TAIL:\n'+log+'\nPAGE ERRORS:\n'+errors.join('\n'));
       await writeFile('pnr-repro-output/'+name+'.json',JSON.stringify({name,root,stage,flashEnabled,errors},null,2));
       console.log(name,stage,'flashEnabled:',flashEnabled,'errors:',errors.slice(-3));
       if (name==='reference_example2' && stage!=='Complete') failed=true;
