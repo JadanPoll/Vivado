@@ -39,6 +39,23 @@ function runFrames2Bit(msg) {
             self.postMessage({ type: 'error', message: "Failed to read design.bit: " + err.toString() });
         }
     }
-    importScripts(msg.baseUrl + 'xc7frames2bit.js');
+    const source = msg.baseUrl + 'xc7frames2bit.js';
+    try {
+        importScripts(source);
+    } catch (cdnError) {
+        // jsDelivr may lag immutable GitHub commits; use the exact same revision.
+        const revision = /@([a-f0-9]{40})\\//.exec(msg.baseUrl)?.[1];
+        if (!revision) {
+            self.postMessage({ type: 'error', message: 'Frames2Bit script unavailable at ' + source + ': ' + cdnError });
+            return;
+        }
+        const fallback = 'https://raw.githubusercontent.com/JadanPoll/Vivado/' + revision + '/PRODUCTION_GRADE/xc7frames2bit.js';
+        self.postMessage({ type: 'log', text: '[ASSET] CDN script unavailable; trying matching GitHub revision ' + revision.slice(0, 7) });
+        try {
+            importScripts(fallback);
+        } catch (rawError) {
+            self.postMessage({ type: 'error', message: 'Frames2Bit script unavailable from CDN (' + cdnError + ') and GitHub (' + rawError + ')' });
+        }
+    }
     
 }
