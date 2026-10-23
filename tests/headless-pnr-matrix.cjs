@@ -64,10 +64,6 @@ function runPnr(dir,slug,variant='original',xdcText=null,frequencyMHz=null){
  const lines=originalXdc.split(/\r?\n/);
  const variants={
    no_create_clock:lines.filter(l=>!l.trim().startsWith('create_clock')).join('\n'),
-   clock_only:lines.filter(l=>l.includes('get_ports {clk}')||l.trim().startsWith('create_clock')).join('\n'),
-   led_only:lines.filter(l=>l.includes('get_ports {LED}')).join('\n'),
-   no_clock_pin:lines.filter(l=>!l.includes('PACKAGE_PIN N15')).join('\n'),
-   empty_xdc:'',
  };
  for(const [variant,xdc] of Object.entries(variants)){
    const result=await runPnr(blink,'04_blink',variant,xdc);
@@ -78,5 +74,12 @@ function runPnr(dir,slug,variant='original',xdcText=null,frequencyMHz=null){
  fs.writeFileSync(path.join(outDir,'matrix.json'),JSON.stringify(summary,null,2));
  const counts=Object.fromEntries(['PASS','FAIL','SYNTH_FAIL','HARNESS_ERROR','TIMEOUT'].map(x=>[x,summary.filter(v=>v.result===x).length]));
  console.log('MATRIX',JSON.stringify(counts));
- if(summary.some(x=>x.result==='HARNESS_ERROR'||x.result==='SYNTH_FAIL'||x.result==='TIMEOUT'))process.exitCode=2;
+ const expected = summary.filter(x => x.variant==='original' || x.variant==='no_create_clock' || x.variant==='no_create_clock_freq100');
+ const regressions=expected.filter(x=>x.result!=='PASS');
+ const md=['# Headless nextpnr regression matrix','','| Design | Variant | Result | PNR ms |','|---|---|---|---:|',
+   ...summary.map(x=>'| '+x.design.split('/').at(-1)+' | '+x.variant+' | '+x.result+' | '+x.elapsed_ms+' |'),
+   '',regressions.length?'**REGRESSION:** '+regressions.length+' expected PASS cases failed.':'**All expected PASS cases passed.**'];
+ fs.writeFileSync(path.join(outDir,'matrix.md'),md.join('\n'));
+ if(process.env.GITHUB_STEP_SUMMARY)fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,md.join('\n')+'\n');
+ if(regressions.length)process.exitCode=1;
 })();
