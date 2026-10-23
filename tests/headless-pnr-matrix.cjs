@@ -25,7 +25,7 @@ function synth(dir,slug){
  if(r.error||r.status!==0||!fs.existsSync(path.join(scratch,'synth.json')))throw Error('Yosys failed '+String(r.error||r.status));
  return scratch;
 }
-function runPnr(dir,slug,variant='original',xdcText=null){
+function runPnr(dir,slug,variant='original',xdcText=null,frequencyMHz=null){
  return new Promise(resolve=>{
    let settled=false;
    const begin=performance.now(),messages=[];
@@ -33,7 +33,7 @@ function runPnr(dir,slug,variant='original',xdcText=null){
    const xdcPath=path.join(scratch,variant+'.xdc');
    fs.writeFileSync(xdcPath,xdcText===null?fs.readFileSync(path.join(root,dir,'top.xdc'),'utf8'):xdcText);
    const worker=new Worker(path.join(__dirname,'headless-pnr-worker.cjs'),{workerData:{
-     engineDir,wasm:path.join(engineDir,'nextpnr-xilinx.wasm'),
+     engineDir,frequencyMHz,wasm:path.join(engineDir,'nextpnr-xilinx.wasm'),
      chipdb:path.join(outDir,'chipdb.bin'),netlist:path.join(scratch,'synth.json'),
      xdc:xdcPath
    }});
@@ -73,6 +73,8 @@ function runPnr(dir,slug,variant='original',xdcText=null){
    const result=await runPnr(blink,'04_blink',variant,xdc);
    summary.push(result);console.log(JSON.stringify(result));
  }
+ const freqResult=await runPnr(blink,'04_blink','no_create_clock_freq100',variants.no_create_clock,100);
+ summary.push(freqResult);console.log(JSON.stringify(freqResult));
  fs.writeFileSync(path.join(outDir,'matrix.json'),JSON.stringify(summary,null,2));
  const counts=Object.fromEntries(['PASS','FAIL','SYNTH_FAIL','HARNESS_ERROR','TIMEOUT'].map(x=>[x,summary.filter(v=>v.result===x).length]));
  console.log('MATRIX',JSON.stringify(counts));
