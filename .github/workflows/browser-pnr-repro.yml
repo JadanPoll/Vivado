@@ -1,0 +1,33 @@
+name: Browser PNR Reproduction
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'tests/browser-pnr-repro.mjs'
+      - '.github/workflows/browser-pnr-repro.yml'
+jobs:
+  reproduce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install headless Chromium runner
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+      - name: Launch repo webpage
+        run: |
+          python3 -m http.server 8767 --bind 127.0.0.1 > /tmp/zerolabs-http.log 2>&1 &
+          echo $! > /tmp/zerolabs-http.pid
+      - name: Reproduce known passing and failing cases
+        run: node tests/browser-pnr-repro.mjs
+      - name: Upload per-design logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pnr-reproduction-logs
+          path: pnr-repro-output/
+          if-no-files-found: warn
