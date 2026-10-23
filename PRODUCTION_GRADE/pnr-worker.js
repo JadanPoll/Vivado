@@ -258,9 +258,7 @@ function runNextpnr(msg) {
             recordDiagnostic('NEXTPNR STDERR', text);
         },
 
-        // FIX 2: Both postRun and onExit(0) call handleSuccess().
-        //         The successHandled guard (reset in FIX 1) makes this safe —
-        //         whichever fires first wins; the second call is a no-op.
+        // Successful completion is delivered only by postRun, after FS output is ready.
         postRun: function() {
             // Emscripten can finish normally without invoking onExit.
             // Preserve any explicit nonzero WASI exit instead of claiming success.
@@ -272,8 +270,9 @@ function runNextpnr(msg) {
 
         onExit: function(code) {
             exitCode = code;
-            if (code === 0) handleSuccess();
-            else failOnce(`NextPNR exited with code ${code}; ${diagnosticSummary()}`);
+            // Only postRun can announce success: Emscripten may invoke onExit
+            // before postRun has completed /out.fasm writes.
+            if (code !== 0) failOnce(`NextPNR exited with code ${code}; ${diagnosticSummary()}`);
         },
 
         onAbort: function(what) {
