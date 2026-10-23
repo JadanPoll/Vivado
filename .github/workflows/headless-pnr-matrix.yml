@@ -5,11 +5,6 @@ on:
     paths:
       - '.github/workflows/headless-pnr-matrix.yml'
       - 'tests/headless-pnr-*.cjs'
-  push:
-    branches: [investigate/headless-pnr]
-    paths:
-      - '.github/workflows/headless-pnr-matrix.yml'
-      - 'tests/headless-pnr-*.cjs'
 jobs:
   pnr-matrix:
     runs-on: ubuntu-latest
