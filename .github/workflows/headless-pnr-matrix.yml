@@ -6,6 +6,7 @@ on:
       - '.github/workflows/headless-pnr-matrix.yml'
       - 'tests/headless-pnr-*.cjs'
       - 'PRODUCTION_GRADE/pnr-worker.js'
+      - 'PRODUCTION_GRADE/DEFAULTS/**'
 jobs:
   pnr-matrix:
     runs-on: ubuntu-latest
