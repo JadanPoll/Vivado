@@ -20,11 +20,15 @@ jobs:
       - name: Verify implementation retains model-derived contract fixes
         run: python3 tests/source_contract_guards.py
       - name: Enumerate behaviors and check real contracts
-        run: python3 tests/system_behavior_model.py --depth 15
+        run: python3 tests/system_behavior_model.py --depth 10
+      - name: Generate pairwise audit and shortest traces
+        run: python3 tests/system_behavior_model.py --depth 10 --report > system-behavior-audit.md
       - name: Save counterexamples and legal behaviors
-        run: python3 tests/system_behavior_model.py --depth 15 --json > system-behavior-results.json
+        run: python3 tests/system_behavior_model.py --depth 10 --json > system-behavior-results.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: system-behavior-results
-          path: system-behavior-results.json
+          path: |
+            system-behavior-results.json
+            system-behavior-audit.md
