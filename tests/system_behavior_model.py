@@ -60,7 +60,7 @@ class State:
     pin_map: tuple[int,...] = (0,1,2,3)
     logic_order: tuple[int,...] = (0,1,2,3)
 
-def transitions(s: State):
+def transitions(s: State, repaired: bool = False):
     """(domain, English event, next state). Nondeterministic outcomes branch."""
     def step(domain, event, **kw):
         return (domain, event, replace(s, **kw))
@@ -121,16 +121,24 @@ def transitions(s: State):
     if s.flash=="program":
         # IMPORTANT: index.html reads the mutable pipelineState.bitstream HERE,
         # following all permission / init / IDCODE awaits, not at click time.
-        if s.artifact==-1:
+        # Baseline uses mutable global pipelineState; the repaired handler
+        # captures the selected buffer before the first await.
+        selected=s.clicked_artifact if repaired else s.artifact
+        if selected==-1:
             yield step("flash", "programXC7 reads null pipelineState.bitstream",
                        flash="failed",flash_error=True)
         else:
-            # DONE=0 is an allowed electrical result, but programXC7 currently
-            # returns normally despite logging 'FLASH FAILED: DONE BIT LOW'.
             for bit in (0,1):
-                yield step("flash", f"JTAG readStatus reports DONE={bit}; method resolves",
-                           flash="complete",used_artifact=s.artifact,
-                           done_pin=bit,ui_flash_success=True)
+                # DONE=0 is a legal device outcome. It is a contract breach
+                # only if the UI subsequently reports successful programming.
+                if repaired and bit==0:
+                    yield step("flash", "DONE=0 causes rejection and visible flash error",
+                               flash="failed",used_artifact=selected,
+                               done_pin=bit,flash_error=True)
+                else:
+                    yield step("flash", f"JTAG readStatus reports DONE={bit}; method resolves",
+                               flash="complete",used_artifact=selected,
+                               done_pin=bit,ui_flash_success=True)
             yield step("flash", "USB transfer or status read throws",
                        flash="failed",flash_error=True)
     if not s.ble:
@@ -177,8 +185,8 @@ def observations(s: State):
     if s.known_mapping and s.known_mapping!=tuple(s.logic_order[s.pin_map[i]] for i in range(4)):
         yield "physical_observation_changed_after_edit_allowed"
 
-def bfs(domains,depth=15,max_states=250000):
-    seed=State()
+def bfs(domains,depth=15,max_states=250000,seed=None,repaired=False):
+    seed=seed if seed is not None else State()
     q=deque([seed]);visited={seed:(0,None,None)}
     bad={};permitted={};edges=0
     truncated=False
@@ -198,7 +206,7 @@ def bfs(domains,depth=15,max_states=250000):
             if name not in permitted:
                 permitted[name]={"depth":d,"events":trace(s)}
         if d>=depth:continue
-        for domain,label,n in transitions(s):
+        for domain,label,n in transitions(s,repaired=repaired):
             if domain not in domains:continue
             edges+=1
             if n in visited:continue
@@ -207,7 +215,7 @@ def bfs(domains,depth=15,max_states=250000):
             visited[n]=(d+1,s,label);q.append(n)
         if truncated:break
     return {"domains":sorted(domains),"states":len(visited),"edges":edges,
-            "depth":depth,"truncated":truncated,
+            "depth":depth,"truncated":truncated,"repaired":repaired,
             "contract_failures":bad,"allowed_observations":permitted}
 
 def exhaustive_digit_orientations():
@@ -239,7 +247,18 @@ def run(depth):
        ("interface_interleavings",{"github","editor","build","flash","ble"},min(depth,10)),
     ]
     result={name:bfs(dom,dep) for name,dom,dep in slices}
+    # Reachable checkpoint: a user has loaded and built source revision 0.
+    # Starting from this state removes unrelated setup interleavings and
+    # allows deep exploration of Flash/Build competition.
+    ready=State(discovered=0,workspace=0,visible_source=0,
+                observed_source=0,build="ready",build_input=0,artifact=0)
+    competition=bfs({"editor","build","flash"},depth=15,seed=ready)
+    repaired_competition=bfs({"editor","build","flash"},depth=15,seed=ready,repaired=True)
+    repaired_flow=bfs({"github","editor","build","flash"},depth=depth,repaired=True)
     return {"source_anchors":SOURCES,"projections":result,
+            "flash_concurrency_baseline":competition,
+            "flash_concurrency_repaired":repaired_competition,
+            "flash_flow_repaired":repaired_flow,
             "digit_permutations":exhaustive_digit_orientations(),
             "caveat":"Bounded compositional abstraction; counterexamples require source/hardware confirmation"}
 if __name__=="__main__":
@@ -255,6 +274,15 @@ if __name__=="__main__":
                 print(f"  CONTRACT FAILURE: {label}: "+ " -> ".join(ce["events"]))
             for label,ce in v["allowed_observations"].items():
                 print(f"  Allowed: {label}: "+ " -> ".join(ce["events"]))
+        for name in ("flash_concurrency_baseline","flash_concurrency_repaired","flash_flow_repaired"):
+            v=r[name]
+            print(f"{name}: {v['states']} states, {v['edges']} transitions, depth {v['depth']}, truncated={v['truncated']}")
+            for label,ce in v["contract_failures"].items():
+                print(f"  CONTRACT FAILURE: {label}: "+" -> ".join(ce["events"]))
         print("Digit orientation search:",r["digit_permutations"])
     assert r["digit_permutations"]["pairings_checked"]==576
     assert any("FALSE_FLASH_SUCCESS" in v["contract_failures"] for v in r["projections"].values())
+    assert "FALSE_FLASH_SUCCESS" in r["flash_concurrency_baseline"]["contract_failures"]
+    assert "FLASH_SELECTED_ARTIFACT_CHANGED" in r["flash_concurrency_baseline"]["contract_failures"]
+    assert not r["flash_concurrency_repaired"]["contract_failures"]
+    assert not r["flash_flow_repaired"]["contract_failures"]
