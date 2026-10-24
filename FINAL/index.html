@@ -633,6 +633,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
 
         // Workspace state is committed only after every selected file has loaded.
         let workspaceRevision = 0;
+        let discoveryRevision = 0;
         let workspaceReady = false;
         let workspaceIdentity = '';
         let workspaceCatalog = [];
@@ -704,6 +705,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
         }
         function invalidateWorkspace() {
             workspaceRevision++;
+            discoveryRevision++;
             workspaceReady = false;
             workspaceIdentity = '';
             workspaceMembers = {};
@@ -854,12 +856,19 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
         document.getElementById('btn-discover').onclick = async () => {
             if(!confirmWorkspaceSwitch()) return;
             const btn = document.getElementById('btn-discover');
+            const discoveryToken = ++discoveryRevision;
+            const inputRevision = ++workspaceRevision; // Cancel older pending workspace loads.
+            const requestedUrl = document.getElementById('cfg-base').value.trim();
             btn.disabled = true;
             try {
-                const project = await githubProject(document.getElementById('cfg-base').value.trim());
+                const project = await githubProject(requestedUrl);
                 const response = await fetch(project.api+'/git/trees/'+project.ref.split('/').map(encodeURIComponent).join('%2F')+'?recursive=1');
                 if(!response.ok) throw new Error('GitHub tree HTTP '+response.status);
                 const tree = await response.json();
+                if (discoveryToken !== discoveryRevision || inputRevision !== workspaceRevision || requestedUrl !== document.getElementById('cfg-base').value.trim()) {
+                    log('[DISCOVERY] Ignored obsolete repository response.', 'warn');
+                    return;
+                }
                 if(tree.truncated) throw new Error('Repository tree truncated; use a folder URL');
                 workspaceCatalog = (tree.tree||[]).filter(x=>x.type === 'blob' && (!project.dir || x.path.startsWith(project.dir+'/')));
                 workspaceSourceBase = 'https://raw.githubusercontent.com/'+project.owner+'/'+project.repo+'/'+project.ref;
@@ -924,10 +933,17 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
             const btn = document.getElementById('btn-fetch-xdc');
             btn.disabled = true;
             try {
+                const revision = workspaceRevision;
+                const base = projectBase();
                 const path = document.getElementById('cfg-xdc-file').value.trim();
-                const response = await fetch(buildUrl(projectBase(), path));
+                const response = await fetch(buildUrl(base, path));
                 if (!response.ok) throw new Error('HTTP ' + response.status + ' fetching ' + path);
-                document.getElementById('code-xdc-repo').value = await response.text();
+                const xdcText = await response.text();
+                if (revision !== workspaceRevision || base !== projectBase() || path !== document.getElementById('cfg-xdc-file').value.trim()) {
+                    log('[FETCH] Ignored obsolete XDC response.', 'warn');
+                    return;
+                }
+                document.getElementById('code-xdc-repo').value = xdcText;
                 workspaceReady = false; // Revalidate source+XDC together before building.
                 saveState();
                 log('[FETCH] XDC loaded: ' + path);
@@ -938,9 +954,15 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
             const btn = document.getElementById('btn-fetch-v');
             btn.disabled = true;
             try {
+                const revision = workspaceRevision;
+                const base = projectBase();
                 const paths = workspacePaths();
                 if (!paths.length) throw new Error('Choose Verilog files first');
-                const files = await fetchWorkspaceFiles(projectBase(), paths);
+                const files = await fetchWorkspaceFiles(base, paths);
+                if (revision !== workspaceRevision || base !== projectBase() || paths.join(',') !== workspacePaths().join(',')) {
+                    log('[FETCH] Ignored obsolete HDL response.', 'warn');
+                    return;
+                }
                 // Commit only when all selected files have downloaded.
                 remoteVerilogFiles = files;
                 updateVFileDropdown();
