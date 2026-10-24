@@ -1247,7 +1247,11 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
 
         // --- USB JTAG FLASHING ---
         document.getElementById('btn-flash').onclick = async () => {
+            // Capture the exact artifact selected by this click. Build/reload may
+            // invalidate or replace pipelineState during the awaited USB dialog.
+            const selectedBitstream = pipelineState.bitstream;
             try {
+                if (!selectedBitstream) throw new Error('No bitstream selected for flashing');
                 document.getElementById('btn-flash').disabled = true;
                 log(`\n--- FLASHING HARDWARE ---`, 'warn');
                 const device = await navigator.usb.requestDevice({ filters: [{vendorId: 0x0403, productId: 0x6010}] });
@@ -1257,7 +1261,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                 const idcode = await jtag.readIDCODE();
                 log(`[USB] IDCODE: 0x${idcode.toString(16).toUpperCase()}`);
                 if (idcode !== ENGINE_ASSETS.idcode) throw new Error(`Silicon mismatch: got 0x${idcode.toString(16).toUpperCase()}, expected 0x${ENGINE_ASSETS.idcode.toString(16).toUpperCase()}`);
-                await jtag.programXC7(pipelineState.bitstream);
+                await jtag.programXC7(selectedBitstream);
                 log("⚡ HARDWARE FLASHED SUCCESSFULLY!", 'warn');
                 setWorkbenchStatus('Hardware programmed · Urbana XC7S50');
                 } finally { await jtag.close(); }
