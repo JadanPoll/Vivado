@@ -66,3 +66,8 @@ set_property -dict {PACKAGE_PIN F4 IOSTANDARD LVCMOS25} [get_ports {D1_SEG[4]}]
 set_property -dict {PACKAGE_PIN H3 IOSTANDARD LVCMOS25} [get_ports {D1_SEG[5]}]
 set_property -dict {PACKAGE_PIN E5 IOSTANDARD LVCMOS25} [get_ports {D1_SEG[6]}]
 set_property -dict {PACKAGE_PIN J4 IOSTANDARD LVCMOS25} [get_ports {D1_SEG[7]}]
+# USB-UART <-> BLE bridge (same pin mapping as TESTS/uart_ble/top.xdc)
+set_property -dict {PACKAGE_PIN B16 IOSTANDARD LVCMOS33} [get_ports UART_TXD]
+set_property -dict {PACKAGE_PIN A16 IOSTANDARD LVCMOS33} [get_ports UART_RXD]
+set_property -dict {PACKAGE_PIN G15 IOSTANDARD LVCMOS33} [get_ports BLE_UART_TXD]
+set_property -dict {PACKAGE_PIN E13 IOSTANDARD LVCMOS33} [get_ports BLE_UART_RXD]
