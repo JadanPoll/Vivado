@@ -79,20 +79,126 @@ module top (
     output logic [7:0]  D1_SEG
 );
 
-    // Identical forwarding logic to TESTS/uart_ble.
-    // The bridge keeps both UART paths active during stopwatch operation.
-    // Board net names are from the external transmitter/receiver perspective.
-    // G15: BLE_UART_TXD is driven by the BLE module -> FPGA input.
-    // E13: BLE_UART_RXD is received by the BLE module <- FPGA output.
-    // B16: UART_TXD is driven by the USB-UART chip -> FPGA input.
-    // A16: UART_RXD is received by the USB-UART chip <- FPGA output.
-    assign UART_RXD     = BLE_UART_TXD;
-    assign BLE_UART_RXD = UART_TXD;
 
-    // BTN[0] = reset, BTN[1] = start/stop
-    logic reset, run;
-    assign reset = BTN[0];
-    assign run   = BTN[1];
+    // BLE module: 115200 baud, 8N1; newline commits a wireless packet.
+    // USB terminal continues to receive data arriving from Bluetooth.
+    assign UART_RXD=BLE_UART_TXD;
+    localparam integer BIT_CLOCKS=868; // 100 MHz / 115200 rounded
+    (* ASYNC_REG="TRUE" *) reg rx_meta=1,rx_sync=1;
+    always @(posedge clk) begin rx_meta<=BLE_UART_TXD;rx_sync<=rx_meta;end
+    reg [9:0] rx_timer=0;
+    reg [3:0] rx_index=0;
+    reg [7:0] rx_data=0,rx_value=0;
+    reg rx_active=0,rx_done=0;
+    always @(posedge clk) begin
+      rx_done<=0;
+      if(!rx_active) begin
+        if(!rx_sync) begin rx_active<=1;rx_timer<=BIT_CLOCKS/2-1;rx_index<=0;end
+      end else if(rx_timer!=0) rx_timer<=rx_timer-1'b1;
+      else begin
+        rx_timer<=BIT_CLOCKS-1;
+        if(rx_index==0) begin
+          if(rx_sync) rx_active<=0;
+          else rx_index<=1;
+        end else if(rx_index<=8) begin
+          rx_data[rx_index-1'b1]<=rx_sync;rx_index<=rx_index+1'b1;
+        end else begin
+          rx_active<=0;
+          if(rx_sync) begin rx_value<=rx_data;rx_done<=1;end
+        end
+      end
+    end
+
+    // First character determines command; CR ignored, LF executes.
+    // BTN[1] toggles run; UART s/p/r commands override physical button.
+    reg [7:0] command_first=0;
+    reg command_pending=0;
+    reg start_pulse=0,pause_pulse=0,reset_pulse=0;
+    reg running=0,button_prev=0;
+    reg [2:0] request=0;
+    wire reset=BTN[0] | reset_pulse;
+    wire run=running;
+    always @(posedge clk) begin
+      start_pulse<=0;pause_pulse<=0;reset_pulse<=0;request<=0;
+      button_prev<=BTN[1];
+      if(BTN[0] || reset_pulse || pause_pulse) running<=0;
+      else if(start_pulse) running<=1;
+      else if(BTN[1] && !button_prev) running<=~running;
+      if(rx_done) begin
+        if(rx_value==8'h0a) begin
+          if(command_pending) begin
+            case(command_first)
+              "s","S":begin start_pulse<=1;request<=1;end
+              "p","P":begin pause_pulse<=1;request<=2;end
+              "r","R":begin reset_pulse<=1;request<=3;end
+              "h","H","?":request<=4;
+              default:request<=5;
+            endcase
+          end
+          command_pending<=0;
+        end else if(rx_value!=8'h0d && !command_pending) begin
+          command_first<=rx_value;command_pending<=1;
+        end
+      end
+    end
+
+    localparam [71:0] MSG1 = "OK START\n";
+    localparam [71:0] MSG2 = "OK PAUSE\n";
+    localparam [71:0] MSG3 = "OK RESET\n";
+    localparam [247:0] MSG4 = "s start p pause r reset h help\n";
+    localparam [63:0] MSG5 = "UNKNOWN\n";
+    function automatic [7:0] reply_byte(input [2:0] kind,input [5:0] pos);
+      begin case(kind)
+        1: reply_byte=MSG1[8*(9-pos)-1 -: 8];
+        2: reply_byte=MSG2[8*(9-pos)-1 -: 8];
+        3: reply_byte=MSG3[8*(9-pos)-1 -: 8];
+        4: reply_byte=MSG4[8*(31-pos)-1 -: 8];
+        5: reply_byte=MSG5[8*(8-pos)-1 -: 8];
+        default:reply_byte=8'h0a;
+      endcase end
+    endfunction
+    function automatic [5:0] reply_len(input [2:0] kind);
+      begin case(kind)
+        1: reply_len=9;
+        2: reply_len=9;
+        3: reply_len=9;
+        4: reply_len=31;
+        5: reply_len=8;
+        default:reply_len=0;
+      endcase end
+    endfunction
+    // Direct UART transmitter; response overrides USB->BLE passthrough.
+    reg [2:0] response=0;
+    reg [5:0] response_pos=0;
+    reg [9:0] tx_shift=10'h3ff,tx_timer=0;
+    reg [3:0] tx_bits=0;
+    reg tx_active=0,tx_pin=1;
+    assign BLE_UART_RXD=(response!=0 || tx_active)?tx_pin:UART_TXD;
+    always @(posedge clk) begin
+      if(request!=0 && response==0 && !tx_active) begin
+        response<=request;response_pos<=0;
+      end
+      if(tx_active) begin
+        if(tx_timer!=0) tx_timer<=tx_timer-1'b1;
+        else begin
+          tx_timer<=BIT_CLOCKS-1;
+          if(tx_bits==1) begin
+            tx_bits<=0;tx_active<=0;tx_pin<=1;
+          end else begin
+            tx_bits<=tx_bits-1'b1;
+            tx_shift<={1'b1,tx_shift[9:1]};
+            tx_pin<=tx_shift[1];
+          end
+        end
+      end else if(response!=0) begin
+        if(response_pos==reply_len(response)) begin response<=0;tx_pin<=1;end
+        else begin
+          tx_shift<={1'b1,reply_byte(response,response_pos),1'b0};
+          tx_pin<=0;tx_timer<=BIT_CLOCKS-1;tx_bits<=10;
+          tx_active<=1;response_pos<=response_pos+1'b1;
+        end
+      end
+    end
 
     // =========================================================================
     // 1. CLOCK DIVIDERS
