@@ -1,0 +1,35 @@
+name: Headless PNR Matrix
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/headless-pnr-matrix.yml'
+      - 'tests/headless-pnr-*.cjs'
+      - 'PRODUCTION_GRADE/pnr-worker.js'
+      - 'PRODUCTION_GRADE/DEFAULTS/**'
+      - 'PRODUCTION_GRADE/TESTS/**'
+jobs:
+  pnr-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install same YoWASP Yosys release as production
+        run: python3 -m pip install --break-system-packages yowasp-yosys==0.65.0.0.post1154 brotli
+      - name: Decompress pinned FPGA database
+        run: |
+          mkdir -p pnr-repro-output
+          python3 -c "import brotli,pathlib; p=pathlib.Path('PRODUCTION_GRADE/xc7s50.bin.br'); pathlib.Path('pnr-repro-output/chipdb.bin').write_bytes(brotli.decompress(p.read_bytes()))"
+          ls -lh PRODUCTION_GRADE/nextpnr-xilinx.wasm pnr-repro-output/chipdb.bin
+      - name: Execute synthesis and nextpnr under Node
+        run: node tests/headless-pnr-matrix.cjs
+      - name: Upload matrix and exact inputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: headless-pnr-matrix
+          path: pnr-repro-output/
+          if-no-files-found: warn

@@ -1,5 +1,5 @@
 // pulse_gen.sv - Fixed for Urbana Board Diagnostic Build
-module pulse_gen #( 
+module top #( 
     parameter CNTR_WIDTH = 16
 )(
 input logic clk,
@@ -36,10 +36,6 @@ input logic clk,
     assign RGB0[0] = pulse_out;
     assign RGB0[1] = start_strobe;
     assign RGB1[0] = busy;
-logic [CNTR_WIDTH-1:0] seq_cntr = '0;
-
-logic seq_cntr_0;
-assign seq_cntr_0 = (seq_cntr[CNTR_WIDTH-1:0] == '0);
 
 // delayed one cycle
 logic seq_cntr_0_d1;
