@@ -12,9 +12,10 @@ module top (
     output logic BLE_UART_RXD,  // G15 — to BLE
     output logic [15:0] LED
 );
-    // Wired-AND: either pulling low = low on both outputs
-    assign UART_RXD     = UART_TXD & BLE_UART_TXD;
-    assign BLE_UART_RXD = UART_TXD & BLE_UART_TXD;
+    // Cross-connect the two unidirectional UART paths. Names follow the
+    // transmitting/receiving peripheral, not the FPGA port direction.
+    assign UART_RXD     = BLE_UART_TXD;
+    assign BLE_UART_RXD = UART_TXD;
 
     logic [23:0] act_cnt = 0;
     wire activity = ~UART_TXD | ~BLE_UART_TXD;
