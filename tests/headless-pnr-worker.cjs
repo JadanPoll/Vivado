@@ -9,7 +9,7 @@ globalThis.location = {href:'file://' + path.resolve(workerData.engineDir,'pnr-w
 globalThis.postMessage = value => parentPort.postMessage(value);
 globalThis.importScripts = (...urls) => {
   for(const url of urls) {
-    if (path.basename(url)==='nextpnr-xilinx.js' && workerData.frequencyMHz) self.Module.arguments.push('--freq',String(workerData.frequencyMHz));
+    if (path.basename(url)==='nextpnr-xilinx.js') {if (workerData.frequencyMHz) self.Module.arguments.push('--freq',String(workerData.frequencyMHz));if (workerData.extraArguments) self.Module.arguments.push(...workerData.extraArguments); }
     const filename = path.join(workerData.engineDir,path.basename(url));
     vm.runInThisContext(fs.readFileSync(filename,'utf8'), {filename});
   }
