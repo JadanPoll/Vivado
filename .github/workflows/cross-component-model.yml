@@ -13,9 +13,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Explore reachable states
-        run: python3 tests/system_model_v2.py --depth 8
+        run: python3 tests/system_model_v2.py --depth 11
       - name: Save counterexamples and coverage
-        run: python3 tests/system_model_v2.py --depth 8 --json > model-v2-results.json
+        run: python3 tests/system_model_v2.py --depth 11 --json > model-v2-results.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
