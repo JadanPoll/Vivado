@@ -65,6 +65,11 @@ endmodule
 module top (
     input  logic        clk,
     input  logic [3:0]  BTN,
+    // Preserve the Urbana USB-UART <-> BLE bridge while the stopwatch runs.
+    input  logic        UART_TXD,
+    output logic        UART_RXD,
+    input  logic        BLE_UART_TXD,
+    output logic        BLE_UART_RXD,
     output logic [15:0] LED,
     output logic [2:0]  RGB0,
     output logic [2:0]  RGB1,
@@ -73,6 +78,11 @@ module top (
     output logic [3:0]  D1_AN,
     output logic [7:0]  D1_SEG
 );
+
+    // Identical forwarding logic to TESTS/uart_ble.
+    // The bridge keeps both UART paths active during stopwatch operation.
+    assign UART_RXD     = UART_TXD & BLE_UART_TXD;
+    assign BLE_UART_RXD = UART_TXD & BLE_UART_TXD;
 
     // BTN[0] = reset, BTN[1] = start/stop
     logic reset, run;
