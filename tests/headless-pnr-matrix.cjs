@@ -69,7 +69,7 @@ function runPnr(dir,slug,variant='original',xdcText=null,frequencyMHz=null,extra
    const result=await runPnr(blink,blinkSlug,variant,xdc);
    summary.push(result);console.log(JSON.stringify(result));
  }
- const freqResult=await runPnr(blink,'04_blink','no_create_clock_freq100',variants.no_create_clock,100);
+ const freqResult=await runPnr(blink,blinkSlug,'no_create_clock_freq100',variants.no_create_clock,100);
  summary.push(freqResult);console.log(JSON.stringify(freqResult));
  const fifo='PRODUCTION_GRADE/TESTS/fifo_slotmachine';
  const fifoRouter=await runPnr(fifo,'TESTS_fifo_slotmachine','router1',null,null,['--router','router1']);
