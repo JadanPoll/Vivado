@@ -50,3 +50,20 @@ for prefix,pins in pinsets.items():
     for i,pin in enumerate(pins):
         pattern=rf"PACKAGE_PIN\s+{pin}\s+IOSTANDARD\s+LVCMOS25\}}\s*\[get_ports\s+\{{{prefix}\[{i}\]\}}\]"
         require(match(pattern,xdc),f"{prefix}[{i}] canonical pin {pin}")
+
+# Late manual fetches must never be written into a different project.
+manual_xdc=index[index.index("document.getElementById('btn-fetch-xdc').onclick"):
+                 index.index("document.getElementById('btn-fetch-v').onclick")]
+manual_hdl=index[index.index("document.getElementById('btn-fetch-v').onclick"):
+                 index.index("function updateVFileDropdown()")]
+discovery=index[index.index("document.getElementById('btn-discover').onclick = async"):
+                index.index("function saveState()")]
+require("revision !== workspaceRevision" in manual_xdc and
+        manual_xdc.index("revision !== workspaceRevision") < manual_xdc.index("code-xdc-repo').value = xdcText"),
+        "Obsolete XDC response rejected before workspace mutation")
+require("revision !== workspaceRevision" in manual_hdl and
+        manual_hdl.index("revision !== workspaceRevision") < manual_hdl.index("remoteVerilogFiles = files"),
+        "Obsolete HDL response rejected before workspace mutation")
+require("discoveryToken !== discoveryRevision" in discovery and
+        discovery.index("discoveryToken !== discoveryRevision") < discovery.index("workspaceCatalog ="),
+        "Obsolete discovery rejected before catalog publication")
