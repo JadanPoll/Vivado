@@ -7,6 +7,7 @@ on:
       - 'tests/headless-pnr-*.cjs'
       - 'PRODUCTION_GRADE/pnr-worker.js'
       - 'PRODUCTION_GRADE/DEFAULTS/**'
+      - 'PRODUCTION_GRADE/TESTS/**'
 jobs:
   pnr-matrix:
     runs-on: ubuntu-latest
