@@ -5,6 +5,11 @@ on:
     branches: [main]
     paths:
       - 'tests/system_behavior_model.py'
+      - 'tests/source_contract_guards.py'
+      - 'FINAL/index.html'
+      - 'PRODUCTION_GRADE/ftdi-jtag.js'
+      - 'PRODUCTION_GRADE/DEFAULTS/stopwatch/top.v'
+      - 'PRODUCTION_GRADE/DEFAULTS/stopwatch/top.xdc'
       - '.github/workflows/system-behavior.yml'
 jobs:
   behavioral-enumeration:
@@ -12,6 +17,8 @@ jobs:
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
+      - name: Verify implementation retains model-derived contract fixes
+        run: python3 tests/source_contract_guards.py
       - name: Enumerate behaviors and check real contracts
         run: python3 tests/system_behavior_model.py --depth 15
       - name: Save counterexamples and legal behaviors
