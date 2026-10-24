@@ -74,6 +74,18 @@ function runPnr(dir,slug,variant='original',xdcText=null,frequencyMHz=null,extra
  const fifo='PRODUCTION_GRADE/TESTS/fifo_slotmachine';
  const fifoRouter=await runPnr(fifo,'TESTS_fifo_slotmachine','router1',null,null,['--router','router1']);
  summary.push(fifoRouter);console.log(JSON.stringify(fifoRouter));
+ for(const dir of [
+   'PRODUCTION_GRADE/TESTS/srl32_led',
+   'PRODUCTION_GRADE/TESTS/dsp_fibonacci',
+   'PRODUCTION_GRADE/TESTS/fifo_slotmachine'
+ ]){
+   const slug=dir.split('/').slice(-2).join('_');
+   for(const seed of [2,3,4]){
+     const result=await runPnr(dir,slug,'seed_'+seed,null,null,['--seed',String(seed)]);
+     summary.push(result);console.log(JSON.stringify(result));
+     if(result.result==='PASS')break;
+   }
+ }
  fs.writeFileSync(path.join(outDir,'matrix.json'),JSON.stringify(summary,null,2));
  const counts=Object.fromEntries(['PASS','FAIL','SYNTH_FAIL','HARNESS_ERROR','TIMEOUT'].map(x=>[x,summary.filter(v=>v.result===x).length]));
  console.log('MATRIX',JSON.stringify(counts));
