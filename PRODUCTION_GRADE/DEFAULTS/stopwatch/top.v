@@ -81,8 +81,13 @@ module top (
 
     // Identical forwarding logic to TESTS/uart_ble.
     // The bridge keeps both UART paths active during stopwatch operation.
-    assign UART_RXD     = UART_TXD & BLE_UART_TXD;
-    assign BLE_UART_RXD = UART_TXD & BLE_UART_TXD;
+    // Board net names are from the external transmitter/receiver perspective.
+    // G15: BLE_UART_TXD is driven by the BLE module -> FPGA input.
+    // E13: BLE_UART_RXD is received by the BLE module <- FPGA output.
+    // B16: UART_TXD is driven by the USB-UART chip -> FPGA input.
+    // A16: UART_RXD is received by the USB-UART chip <- FPGA output.
+    assign UART_RXD     = BLE_UART_TXD;
+    assign BLE_UART_RXD = UART_TXD;
 
     // BTN[0] = reset, BTN[1] = start/stop
     logic reset, run;
