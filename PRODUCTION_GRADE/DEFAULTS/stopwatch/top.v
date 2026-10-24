@@ -259,7 +259,12 @@ module top (
                         if (s1 == 4'd5) begin s1 <= 4'd0;
                             if (m0 == 4'd9) begin m0 <= 4'd0;
                                 if (m1 == 4'd5) begin m1 <= 4'd0;
-                                    if (h0 == 4'd9) begin h0 <= 4'd0; h1 <= h1 + 4'd1;
+                                    if (h0 == 4'd9) begin
+                                        h0 <= 4'd0;
+                                        // The external HH display and UART time response
+                                        // both contain decimal digits, so roll 99 -> 00.
+                                        if (h1 == 4'd9) h1 <= 4'd0;
+                                        else h1 <= h1 + 4'd1;
                                     end else h0 <= h0 + 4'd1;
                                 end else m1 <= m1 + 4'd1;
                             end else m0 <= m0 + 4'd1;
