@@ -102,6 +102,96 @@ for (a,b),why in IMPOSSIBLE.items():
 for a,b,kind,label,source in RELATIONS:
     PAIRS[a,b].append((kind,label,source))
 
+# Depth-1 decompositions of every element marked "refine" above. Children are
+# stopping boundaries for this investigation, with explicit justification;
+# they remain refinable if a property later demands greater granularity.
+CHILDREN={
+ 'actor': {'intent':'User goal (stop: external intention axiomatic)',
+           'observation':'Received evidence (stop: perception details not modeled)',
+           'belief':'Remembered/possibly mistaken state (stop: cognition abstracted)',
+           'decision':'Chosen action (stop: abstract action label)'},
+ 'discover': {'ref':'Repository/ref resolver (stop: API endpoint treated as external)',
+              'tree':'GitHub tree response (stop: response modeled atomically)',
+              'publish':'Catalog selection/publish (stop: assignment operation)'},
+ 'workspace': {'url':'Current project URL (stop: identity domain A/B)',
+               'hdl':'HDL contents (stop: payload origin represented)',
+               'xdc':'XDC contents (stop: payload origin represented)',
+               'identity':'Project key and ready flag (stop: association properties)'},
+ 'draft': {'key':'localStorage identity key (stop: string abstraction)',
+            'payload':'Saved source/XDC (stop: content abstracted by origin)',
+            'storage':'Storage outcome (stop: success/failure boundary)'},
+ 'build': {'snapshot':'Captured input snapshot (stop: immutable payload origin)',
+            'stage':'Yosys/PNR/FASM/frames stage (stop: worker outcomes atomic)',
+            'publish':'Ready artifact publication (stop: atomic assignment)'},
+ 'cache': {'key':'Pinned asset/version key (stop: immutable revision label)',
+            'promise':'Pending/rejected loader (stop: Promise scheduling boundary)',
+            'bytes':'Decoded and transferred assets (stop: bytes not needed here)'},
+ 'fasm': {'features':'Feature-to-frame map (stop: map lookup boundary)',
+           'warning':'Unmapped feature telemetry (stop: warning label)',
+           'frames':'Output frame data (stop: bytes abstracted)'},
+ 'artifact': {'origin':'Source/toolchain provenance (stop: revision label)',
+              'buffer':'Compiled bitstream bytes (stop: opaque immutable value)',
+              'selected':'Selected artifact at flash click (stop: captured reference)'},
+ 'usb': {'permission':'WebUSB permission (stop: grant/deny outcome)',
+         'idcode':'Device identity read (stop: pass/fail outcome)',
+         'shift':'Program bitstream transfer (stop: success/interruption outcome)',
+         'status':'DONE status check (stop: asserted/low outcome)'},
+ 'board': {'pins':'Physical pin connections (stop: canonical XDC given)',
+           'clock':'Oscillator/ticks (stop: discrete elapsed event)',
+           'done':'Configuration DONE level (stop: binary observation)'},
+ 'ble': {'gatt':'Connection state (stop: connected/disconnected)',
+         'chunks':'Outgoing BLE write chunks (stop: delivery nondeterministic)',
+         'rx':'Received bytes/notifications (stop: command label)'},
+ 'rtl': {'rx':'UART command framing (stop: bytes collapsed to command)',
+         'counter':'BCD counter state (stop: decimal digit ranges)',
+         'scan':'Digit scan/permutation (stop: mapping labels)'},
+}
+# Direct internal relations, each with an interface justification. Unlisted
+# internal pairs stay unresolved, not silently impossible.
+CHILD_EDGES={
+ 'actor':[('observation','belief','E','Observation updates remembered model'),
+          ('belief','decision','C','Belief can influence chosen action'),
+          ('intent','decision','C','Intention can influence choice')],
+ 'discover':[('ref','tree','C','Resolved SHA used to request tree'),
+             ('tree','publish','C','Nontruncated response populates catalog')],
+ 'workspace':[('url','hdl','C','URL selects source bytes'),
+              ('url','xdc','C','URL selects XDC bytes'),
+              ('hdl','identity','C','Committed source associated with workspace key'),
+              ('xdc','identity','C','XDC availability determines readiness')],
+ 'draft':[('key','payload','C','Key indexes stored project bytes'),
+          ('storage','payload','C','Storage success permits save/restore')],
+ 'build':[('snapshot','stage','E','Stages consume captured input'),
+          ('stage','publish','C','Successful final stage publishes result')],
+ 'cache':[('key','promise','E','Asset key selects loader promise'),
+          ('promise','bytes','C','Successful resolved promise supplies assets')],
+ 'fasm':[('features','frames','C','Recognized features generate frame bits'),
+         ('features','warning','C','Missing features generate warning count')],
+ 'artifact':[('origin','buffer','E','Result is associated with build provenance'),
+             ('buffer','selected','C','Flash handler captures selected array')],
+ 'usb':[('permission','idcode','C','Granted access permits ID read'),
+        ('idcode','shift','C','Correct ID permits programming'),
+        ('shift','status','C','Transfer followed by DONE read')],
+ 'board':[('pins','clock','U','No direct causal relation specified; retain uncertainty'),
+          ('clock','done','U','No direct causal relation established')],
+ 'ble':[('gatt','chunks','C','Write requires connected characteristic'),
+        ('gatt','rx','C','Notifications require active session')],
+ 'rtl':[('rx','counter','C','Decoded commands control stopwatch'),
+        ('counter','scan','E','Displayed nibble values originate from counters')],
+}
+assert set(CHILDREN)=={k for k,v in NODES.items() if v[1]=='refine'}
+assert set(CHILD_EDGES)==set(CHILDREN)
+
+def child_audits():
+    audit={}
+    for parent,children in CHILDREN.items():
+        pairs={(a,b):[] for a in children for b in children}
+        for a,b,k,label in CHILD_EDGES[parent]:
+            if k!='U':pairs[a,b].append((k,label))
+        audit[parent]={'nodes':len(children),'ordered_pairs':len(pairs),
+                       'evidenced':sum(bool(v) for v in pairs.values()),
+                       'unresolved':sum(not v for v in pairs.values())}
+    return audit
+
 @dataclass(frozen=True)
 class S:
     selected: int=0              # URL's current requested project
@@ -295,6 +385,7 @@ def run(depth=9):
                    for spec in PAIRS.values())
     return {'nodes':len(NODES),'audited_ordered_pairs':len(PAIRS),
             'pair_classification':dict(matrix),'refine':sum(x[1]=='refine' for x in NODES.values()),
+            'depth1':child_audits(),
             'stop':sum(x[1]=='stop' for x in NODES.values()),
             'projections':slices,'digit_mapping_pairs':sum(pairs.values()),
             'distinct_digit_orders':len(pairs),
@@ -313,7 +404,19 @@ def report(res):
     print('|ID|Element|Decision|Justification|\n|---|---|---|---|')
     for id,(label,decision,why) in NODES.items():
         print(f'|`{id}`|{label}|{decision}|{why}|')
-    print('\n## Ordered-pair matrix\n')
+    print('\n## Depth 1: refinements and stopping rules\n')
+    for parent,children in CHILDREN.items():
+        print('### '+parent+'\n')
+        print('**Summary justification:** '+NODES[parent][2]+'.\n')
+        print('|Subelement|Boundary/stopping justification|\n|---|---|')
+        for child,why in children.items(): print(f'|`{child}`|{why}|')
+        names=list(children)
+        edges={(a,b): k for a,b,k,label in CHILD_EDGES[parent] if k!='U'}
+        print('\n|Source\\Target|'+'|'.join(names)+'|')
+        print('|'+'---|'*(len(names)+1))
+        for a in names:print('|'+a+'|'+'|'.join(edges.get((a,b),'U') for b in names)+'|')
+        print('\nEdges: '+ '; '.join(f'{a} → {b} [{k}]: {label}' for a,b,k,label in CHILD_EDGES[parent])+'\n')
+    print('\n## Ordered-pair matrix (depth 0)\n')
     print('**E** evidenced, **C** conditional, **X** excluded direct interface with stated justification, **U** unresolved; unresolved pairs are not impossible. Rows are source; columns are target.\n')
     print('|Source\\Target|'+'|'.join(ids)+'|')
     print('|'+'---|'*(len(ids)+1))
@@ -340,6 +443,7 @@ if __name__=='__main__':
     p.add_argument('--report',action='store_true')
     args=p.parse_args();r=run(args.depth)
     assert r['audited_ordered_pairs']==len(NODES)**2
+    assert all(x['ordered_pairs']==x['nodes']**2 for x in r['depth1'].values())
     assert r['all_display_permutations']==576
     assert not r['projections']['workspace_guarded']['counterexamples']
     assert 'WRONG_SOURCE_ASSOCIATION' in r['projections']['workspace_original']['counterexamples']
