@@ -60,7 +60,7 @@
         #build-history {font-size:.82rem;line-height:1.6;margin:8px 0;color:inherit;}
         .layout-grip {resize:vertical;overflow:auto;min-height:140px;}
     </style>
-    <script src="https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@d5021b8596d9c5b45dd46ad56e38e69552772c00/PRODUCTION_GRADE/ftdi-jtag.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@c32a476e7d987b8ae2752d16e585608f3fec182c/PRODUCTION_GRADE/ftdi-jtag.js"></script>
 </head>
 <body>
 
@@ -339,7 +339,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                        /^(\d+\.\d+\.\d+\.\d+)$/.test(location.hostname);   // covers LAN IPs like 192.168.x.x
 
         const baseUrl = new URL('./', import.meta.url).href;   // directory of this script
-        const CDN_BASE = 'https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@d5021b8596d9c5b45dd46ad56e38e69552772c00/PRODUCTION_GRADE/';
+        const CDN_BASE = 'https://cdn.jsdelivr.net/gh/JadanPoll/Vivado@c32a476e7d987b8ae2752d16e585608f3fec182c/PRODUCTION_GRADE/';
 
         const ENGINE_REVISION = CDN_BASE.match(/@([0-9a-f]{40})\//)?.[1] || 'unknown';
         document.getElementById('engine-revision').textContent = 'Engine ' + ENGINE_REVISION.slice(0, 7);
