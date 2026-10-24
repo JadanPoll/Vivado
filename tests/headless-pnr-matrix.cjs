@@ -9,15 +9,13 @@ const engineDir=path.join(root,'PRODUCTION_GRADE');
 const outDir=path.join(root,'pnr-repro-output');
 fs.mkdirSync(outDir,{recursive:true});
 const cases=[
- 'PRODUCTION_GRADE/TESTS/example2',
- 'PRODUCTION_GRADE/DEFAULTS/04_blink',
- 'PRODUCTION_GRADE/DEFAULTS/08_led_chaser',
- 'PRODUCTION_GRADE/DEFAULTS/05_binary_counter',
- 'PRODUCTION_GRADE/DEFAULTS/09_pwm_brightness',
+...fs.readdirSync(path.join(root,'PRODUCTION_GRADE/DEFAULTS'),{withFileTypes:true}).filter(x=>x.isDirectory()).map(x=>'PRODUCTION_GRADE/DEFAULTS/'+x.name),
+...fs.readdirSync(path.join(root,'PRODUCTION_GRADE/TESTS'),{withFileTypes:true}).filter(x=>x.isDirectory()).map(x=>'PRODUCTION_GRADE/TESTS/'+x.name),
 ];
 function synth(dir,slug){
  const scratch=path.join(outDir,slug);fs.mkdirSync(scratch,{recursive:true});
- const src=fs.readFileSync(path.join(root,dir,'top.v'),'utf8');
+ const sourceName=fs.existsSync(path.join(root,dir,'top.v'))?'top.v':'hdmi.sv';
+ const src=fs.readFileSync(path.join(root,dir,sourceName),'utf8');
  fs.writeFileSync(path.join(scratch,'source_0.v'),src);
  const script='read_verilog -sv source_0.v; hierarchy -top top; proc; opt; memory; opt; synth_xilinx -flatten -abc9 -arch xc7 -top top; write_json synth.json';
  const r=cp.spawnSync('yowasp-yosys',['-p',script],{cwd:scratch,encoding:'utf8',timeout:180000,maxBuffer:32*1024*1024});
@@ -31,7 +29,8 @@ function runPnr(dir,slug,variant='original',xdcText=null,frequencyMHz=null){
    const begin=performance.now(),messages=[];
    const scratch=path.join(outDir,slug);
    const xdcPath=path.join(scratch,variant+'.xdc');
-   fs.writeFileSync(xdcPath,xdcText===null?fs.readFileSync(path.join(root,dir,'top.xdc'),'utf8'):xdcText);
+   const originalXdc=fs.existsSync(path.join(root,dir,'top.xdc'))?path.join(root,dir,'top.xdc'):path.join(root,dir,'hdmi.xdc');
+   fs.writeFileSync(xdcPath,xdcText===null?fs.readFileSync(originalXdc,'utf8'):xdcText);
    const worker=new Worker(path.join(__dirname,'headless-pnr-worker.cjs'),{workerData:{
      engineDir,frequencyMHz,wasm:path.join(engineDir,'nextpnr-xilinx.wasm'),
      chipdb:path.join(outDir,'chipdb.bin'),netlist:path.join(scratch,'synth.json'),
@@ -52,7 +51,7 @@ function runPnr(dir,slug,variant='original',xdcText=null,frequencyMHz=null){
 (async()=>{
  const summary=[];
  for(const dir of cases){
-   const slug=dir.split('/').slice(-1)[0];
+   const slug=dir.split('/').slice(-2).join('_');
    const begin=performance.now();
    try {synth(dir,slug);let r=await runPnr(dir,slug);r.synthesis_ms=Math.round(performance.now()-begin-r.elapsed_ms);summary.push(r);}
    catch(e){summary.push({design:dir,result:'SYNTH_FAIL',error:String(e.stack||e)});}
@@ -60,13 +59,14 @@ function runPnr(dir,slug,variant='original',xdcText=null,frequencyMHz=null){
  }
  // Diagnose parseXdc failures without resynthesizing or changing netlist.
  const blink='PRODUCTION_GRADE/DEFAULTS/04_blink';
+ const blinkSlug='DEFAULTS_04_blink';
  const originalXdc=fs.readFileSync(path.join(root,blink,'top.xdc'),'utf8');
  const lines=originalXdc.split(/\r?\n/);
  const variants={
    no_create_clock:lines.filter(l=>!l.trim().startsWith('create_clock')).join('\n'),
  };
  for(const [variant,xdc] of Object.entries(variants)){
-   const result=await runPnr(blink,'04_blink',variant,xdc);
+   const result=await runPnr(blink,blinkSlug,variant,xdc);
    summary.push(result);console.log(JSON.stringify(result));
  }
  const freqResult=await runPnr(blink,'04_blink','no_create_clock_freq100',variants.no_create_clock,100);
