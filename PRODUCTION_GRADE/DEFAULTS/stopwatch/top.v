@@ -116,6 +116,7 @@ module top (
     reg start_pulse=0,pause_pulse=0,reset_pulse=0;
     reg running=0,button_prev=0;
     reg [2:0] request=0;
+    reg [95:0] time_snapshot = "00:00:00.00\n";
     wire reset=BTN[0] | reset_pulse;
     wire run=running;
     always @(posedge clk) begin
@@ -132,6 +133,10 @@ module top (
               "p","P":begin pause_pulse<=1;request<=2;end
               "r","R":begin reset_pulse<=1;request<=3;end
               "h","H","?":request<=4;
+              "t","T": begin
+                time_snapshot <= {8'h30+h1,8'h30+h0,8'h3a,8'h30+m1,8'h30+m0,8'h3a,8'h30+s1,8'h30+s0,8'h2e,8'h30+cs1,8'h30+cs0,8'h0a};
+                request<=6;
+              end
               default:request<=5;
             endcase
           end
@@ -145,14 +150,15 @@ module top (
     localparam [71:0] MSG1 = "OK START\n";
     localparam [71:0] MSG2 = "OK PAUSE\n";
     localparam [71:0] MSG3 = "OK RESET\n";
-    localparam [247:0] MSG4 = "s start p pause r reset h help\n";
+    localparam [303:0] MSG4 = "s start p pause r reset h help t time\n";
     localparam [63:0] MSG5 = "UNKNOWN\n";
     function automatic [7:0] reply_byte(input [2:0] kind,input [5:0] pos);
       begin case(kind)
         1: reply_byte=MSG1[8*(9-pos)-1 -: 8];
         2: reply_byte=MSG2[8*(9-pos)-1 -: 8];
         3: reply_byte=MSG3[8*(9-pos)-1 -: 8];
-        4: reply_byte=MSG4[8*(31-pos)-1 -: 8];
+        4: reply_byte=MSG4[8*(38-pos)-1 -: 8];
+        6: reply_byte=time_snapshot[8*(12-pos)-1 -: 8];
         5: reply_byte=MSG5[8*(8-pos)-1 -: 8];
         default:reply_byte=8'h0a;
       endcase end
@@ -162,7 +168,8 @@ module top (
         1: reply_len=9;
         2: reply_len=9;
         3: reply_len=9;
-        4: reply_len=31;
+        4: reply_len=38;
+        6: reply_len=12;
         5: reply_len=8;
         default:reply_len=0;
       endcase end
@@ -269,13 +276,13 @@ module top (
 
     hex_driver disp0 (
         .clk(clk), .reset(reset),
-        .in({s1, s0, cs1, cs0}),
+        .in({h1, h0, m1, m0}),
         .hex_seg(D0_SEG), .hex_grid(D0_AN)
     );
 
     hex_driver disp1 (
         .clk(clk), .reset(reset),
-        .in({h1, h0, m1, m0}),
+        .in({s1, s0, cs1, cs0}),
         .hex_seg(D1_SEG), .hex_grid(D1_AN)
     );
 
