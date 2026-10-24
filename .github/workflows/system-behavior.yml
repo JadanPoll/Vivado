@@ -1,0 +1,23 @@
+name: Contract-Oriented System Exploration
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'tests/system_behavior_model.py'
+      - '.github/workflows/system-behavior.yml'
+jobs:
+  behavioral-enumeration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enumerate behaviors and check real contracts
+        run: python3 tests/system_behavior_model.py --depth 15
+      - name: Save counterexamples and legal behaviors
+        run: python3 tests/system_behavior_model.py --depth 15 --json > system-behavior-results.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: system-behavior-results
+          path: system-behavior-results.json
