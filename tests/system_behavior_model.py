@@ -237,6 +237,42 @@ def exhaustive_digit_orientations():
             "solutions_with_canonical_physical_pins":canonical,
             "constraint":"Physical pins fixed by verified Urbana XDC; vary HDL order"}
 
+def explore_hour_rollover(repaired=False):
+    """Hour carries abstract away 360000 centisecond ticks per hour.
+
+    Directly models the h0/h1 carry in stopwatch/top.v. Pauses and
+    resets are admissible and cannot reach an invalid digit sooner.
+    """
+    q=deque([(0,0)])
+    parents={(0,0):None}
+    violation=None
+    while q:
+        h1,h0=q.popleft()
+        if h1>9 or h0>9:
+            tail=[]
+            cur=(h1,h0)
+            while parents[cur]:
+                previous,event=parents[cur]
+                tail.append((event,cur))
+                cur=previous
+            violation={"hour_elapsed_events":len(tail),
+                       "last_states":tail[::-1][-5:],
+                       "rendered_time":chr(48+h1)+chr(48+h0)+":00:00.00"}
+            break
+        # Time can pause, reset or elapse. Pausing gives a self-edge.
+        outcomes=[("reset",(0,0)),("pause",(h1,h0))]
+        if h0==9:
+            h1new=(0 if h1==9 else h1+1) if repaired else (h1+1)%16
+            outcomes.append(("one hour elapsed",(h1new,0)))
+        else:
+            outcomes.append(("one hour elapsed",(h1,h0+1)))
+        for action,new in outcomes:
+            if new not in parents:
+                parents[new]=((h1,h0),action)
+                q.append(new)
+    return {"reachable_hour_states":len(parents),"repaired":repaired,
+            "counterexample":violation}
+
 def run(depth):
     # Dependency closures, not arbitrary isolated toy scenarios. Every slice
     # draws transitions from the SAME global definition above.
@@ -260,6 +296,8 @@ def run(depth):
             "flash_concurrency_repaired":repaired_competition,
             "flash_flow_repaired":repaired_flow,
             "digit_permutations":exhaustive_digit_orientations(),
+            "hours_baseline":explore_hour_rollover(),
+            "hours_repaired":explore_hour_rollover(repaired=True),
             "caveat":"Bounded compositional abstraction; counterexamples require source/hardware confirmation"}
 if __name__=="__main__":
     ap=argparse.ArgumentParser()
@@ -280,9 +318,13 @@ if __name__=="__main__":
             for label,ce in v["contract_failures"].items():
                 print(f"  CONTRACT FAILURE: {label}: "+" -> ".join(ce["events"]))
         print("Digit orientation search:",r["digit_permutations"])
+        print("Hour rollover baseline:",r["hours_baseline"])
+        print("Hour rollover repaired:",r["hours_repaired"])
     assert r["digit_permutations"]["pairings_checked"]==576
     assert any("FALSE_FLASH_SUCCESS" in v["contract_failures"] for v in r["projections"].values())
     assert "FALSE_FLASH_SUCCESS" in r["flash_concurrency_baseline"]["contract_failures"]
     assert "FLASH_SELECTED_ARTIFACT_CHANGED" in r["flash_concurrency_baseline"]["contract_failures"]
     assert not r["flash_concurrency_repaired"]["contract_failures"]
     assert not r["flash_flow_repaired"]["contract_failures"]
+    assert r["hours_baseline"]["counterexample"]["hour_elapsed_events"]==100
+    assert r["hours_repaired"]["counterexample"] is None
