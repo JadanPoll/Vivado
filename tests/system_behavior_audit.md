@@ -24,7 +24,232 @@ Scope: `FINAL/index.html`, `PRODUCTION_GRADE` worker/JTAG/BLE modules, and stopw
 |`ble`|BLE client and serial bridge|refine|Connection, chunks, disconnect and delayed notifications|
 |`rtl`|Stopwatch RTL and display decoder|refine|Clock, BCD carry, command parser, logical digit permutation|
 
-## Ordered-pair matrix
+## Depth 1: refinements and stopping rules
+
+### actor
+
+**Summary justification:** Intent, interruptions, forgotten observations and edits can alter interactions.
+
+|Subelement|Boundary/stopping justification|
+|---|---|
+|`intent`|User goal (stop: external intention axiomatic)|
+|`observation`|Received evidence (stop: perception details not modeled)|
+|`belief`|Remembered/possibly mistaken state (stop: cognition abstracted)|
+|`decision`|Chosen action (stop: abstract action label)|
+
+|Source\Target|intent|observation|belief|decision|
+|---|---|---|---|---|
+|intent|U|U|U|C|
+|observation|U|U|E|U|
+|belief|U|U|U|C|
+|decision|U|U|U|U|
+
+Edges: observation → belief [E]: Observation updates remembered model; belief → decision [C]: Belief can influence chosen action; intent → decision [C]: Intention can influence choice
+
+### discover
+
+**Summary justification:** Async ref resolution, tree fetch, catalog publication.
+
+|Subelement|Boundary/stopping justification|
+|---|---|
+|`ref`|Repository/ref resolver (stop: API endpoint treated as external)|
+|`tree`|GitHub tree response (stop: response modeled atomically)|
+|`publish`|Catalog selection/publish (stop: assignment operation)|
+
+|Source\Target|ref|tree|publish|
+|---|---|---|---|
+|ref|U|C|U|
+|tree|U|U|C|
+|publish|U|U|U|
+
+Edges: ref → tree [C]: Resolved SHA used to request tree; tree → publish [C]: Nontruncated response populates catalog
+
+### workspace
+
+**Summary justification:** Base URL, identity, selected files, edited bytes, revision guard.
+
+|Subelement|Boundary/stopping justification|
+|---|---|
+|`url`|Current project URL (stop: identity domain A/B)|
+|`hdl`|HDL contents (stop: payload origin represented)|
+|`xdc`|XDC contents (stop: payload origin represented)|
+|`identity`|Project key and ready flag (stop: association properties)|
+
+|Source\Target|url|hdl|xdc|identity|
+|---|---|---|---|---|
+|url|U|C|C|U|
+|hdl|U|U|U|C|
+|xdc|U|U|U|C|
+|identity|U|U|U|U|
+
+Edges: url → hdl [C]: URL selects source bytes; url → xdc [C]: URL selects XDC bytes; hdl → identity [C]: Committed source associated with workspace key; xdc → identity [C]: XDC availability determines readiness
+
+### draft
+
+**Summary justification:** Save, restore, storage failure, wrong project key.
+
+|Subelement|Boundary/stopping justification|
+|---|---|
+|`key`|localStorage identity key (stop: string abstraction)|
+|`payload`|Saved source/XDC (stop: content abstracted by origin)|
+|`storage`|Storage outcome (stop: success/failure boundary)|
+
+|Source\Target|key|payload|storage|
+|---|---|---|---|
+|key|U|C|U|
+|payload|U|U|U|
+|storage|U|C|U|
+
+Edges: key → payload [C]: Key indexes stored project bytes; storage → payload [C]: Storage success permits save/restore
+
+### build
+
+**Summary justification:** Input snapshot, async stage completion, published artifact.
+
+|Subelement|Boundary/stopping justification|
+|---|---|
+|`snapshot`|Captured input snapshot (stop: immutable payload origin)|
+|`stage`|Yosys/PNR/FASM/frames stage (stop: worker outcomes atomic)|
+|`publish`|Ready artifact publication (stop: atomic assignment)|
+
+|Source\Target|snapshot|stage|publish|
+|---|---|---|---|
+|snapshot|U|E|U|
+|stage|U|U|C|
+|publish|U|U|U|
+
+Edges: snapshot → stage [E]: Stages consume captured input; stage → publish [C]: Successful final stage publishes result
+
+### cache
+
+**Summary justification:** Pending/failure and buffer transfer semantics.
+
+|Subelement|Boundary/stopping justification|
+|---|---|
+|`key`|Pinned asset/version key (stop: immutable revision label)|
+|`promise`|Pending/rejected loader (stop: Promise scheduling boundary)|
+|`bytes`|Decoded and transferred assets (stop: bytes not needed here)|
+
+|Source\Target|key|promise|bytes|
+|---|---|---|---|
+|key|U|E|U|
+|promise|U|U|C|
+|bytes|U|U|U|
+
+Edges: key → promise [E]: Asset key selects loader promise; promise → bytes [C]: Successful resolved promise supplies assets
+
+### fasm
+
+**Summary justification:** Success, warnings, errors affect pipeline provenance.
+
+|Subelement|Boundary/stopping justification|
+|---|---|
+|`features`|Feature-to-frame map (stop: map lookup boundary)|
+|`warning`|Unmapped feature telemetry (stop: warning label)|
+|`frames`|Output frame data (stop: bytes abstracted)|
+
+|Source\Target|features|warning|frames|
+|---|---|---|---|
+|features|U|C|C|
+|warning|U|U|U|
+|frames|U|U|U|
+
+Edges: features → frames [C]: Recognized features generate frame bits; features → warning [C]: Missing features generate warning count
+
+### artifact
+
+**Summary justification:** Selection at click, retention, replacement and warnings.
+
+|Subelement|Boundary/stopping justification|
+|---|---|
+|`origin`|Source/toolchain provenance (stop: revision label)|
+|`buffer`|Compiled bitstream bytes (stop: opaque immutable value)|
+|`selected`|Selected artifact at flash click (stop: captured reference)|
+
+|Source\Target|origin|buffer|selected|
+|---|---|---|---|
+|origin|U|E|U|
+|buffer|U|U|C|
+|selected|U|U|U|
+
+Edges: origin → buffer [E]: Result is associated with build provenance; buffer → selected [C]: Flash handler captures selected array
+
+### usb
+
+**Summary justification:** Permission, IDCODE, transfer, DONE and failure.
+
+|Subelement|Boundary/stopping justification|
+|---|---|
+|`permission`|WebUSB permission (stop: grant/deny outcome)|
+|`idcode`|Device identity read (stop: pass/fail outcome)|
+|`shift`|Program bitstream transfer (stop: success/interruption outcome)|
+|`status`|DONE status check (stop: asserted/low outcome)|
+
+|Source\Target|permission|idcode|shift|status|
+|---|---|---|---|---|
+|permission|U|C|U|U|
+|idcode|U|U|C|U|
+|shift|U|U|U|C|
+|status|U|U|U|U|
+
+Edges: permission → idcode [C]: Granted access permits ID read; idcode → shift [C]: Correct ID permits programming; shift → status [C]: Transfer followed by DONE read
+
+### board
+
+**Summary justification:** Physical pin, active polarity, DONE, counter display, board state.
+
+|Subelement|Boundary/stopping justification|
+|---|---|
+|`pins`|Physical pin connections (stop: canonical XDC given)|
+|`clock`|Oscillator/ticks (stop: discrete elapsed event)|
+|`done`|Configuration DONE level (stop: binary observation)|
+
+|Source\Target|pins|clock|done|
+|---|---|---|---|
+|pins|U|U|U|
+|clock|U|U|U|
+|done|U|U|U|
+
+Edges: pins → clock [U]: No direct causal relation specified; retain uncertainty; clock → done [U]: No direct causal relation established
+
+### ble
+
+**Summary justification:** Connection, chunks, disconnect and delayed notifications.
+
+|Subelement|Boundary/stopping justification|
+|---|---|
+|`gatt`|Connection state (stop: connected/disconnected)|
+|`chunks`|Outgoing BLE write chunks (stop: delivery nondeterministic)|
+|`rx`|Received bytes/notifications (stop: command label)|
+
+|Source\Target|gatt|chunks|rx|
+|---|---|---|---|
+|gatt|U|C|C|
+|chunks|U|U|U|
+|rx|U|U|U|
+
+Edges: gatt → chunks [C]: Write requires connected characteristic; gatt → rx [C]: Notifications require active session
+
+### rtl
+
+**Summary justification:** Clock, BCD carry, command parser, logical digit permutation.
+
+|Subelement|Boundary/stopping justification|
+|---|---|
+|`rx`|UART command framing (stop: bytes collapsed to command)|
+|`counter`|BCD counter state (stop: decimal digit ranges)|
+|`scan`|Digit scan/permutation (stop: mapping labels)|
+
+|Source\Target|rx|counter|scan|
+|---|---|---|---|
+|rx|U|C|U|
+|counter|U|U|E|
+|scan|U|U|U|
+
+Edges: rx → counter [C]: Decoded commands control stopwatch; counter → scan [E]: Displayed nibble values originate from counters
+
+
+## Ordered-pair matrix (depth 0)
 
 **E** evidenced, **C** conditional, **X** excluded direct interface with stated justification, **U** unresolved; unresolved pairs are not impossible. Rows are source; columns are target.
 
