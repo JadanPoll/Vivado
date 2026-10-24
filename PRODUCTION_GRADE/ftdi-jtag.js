@@ -194,7 +194,9 @@ async programXC7(bitstream) {
         if ((finalStat >> 14) & 1) {
             console.log("%c[USB] FLASH SUCCESS: DONE LED SHOULD BE ON", "color: #4af626; font-weight: bold;");
         } else {
-            console.error("[USB] FLASH FAILED: DONE BIT LOW. Check bitstream integrity.");
+            const message = "[USB] FLASH FAILED: DONE BIT LOW. Check bitstream integrity.";
+            console.error(message);
+            throw new Error(message);
         }
     }
 
