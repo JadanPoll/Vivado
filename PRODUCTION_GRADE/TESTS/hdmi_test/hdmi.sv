@@ -1,5 +1,5 @@
 // pulse_gen.sv - Fixed for Urbana Board Diagnostic Build
-module pulse_gen #( 
+module top #( 
     parameter CNTR_WIDTH = 16
 )(
 input logic clk,
