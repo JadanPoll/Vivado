@@ -1076,7 +1076,10 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
                         const script = [
                             readCommands,
                             'hierarchy  -top ' + topModule,
-                            'proc; opt; memory; opt',
+                            // Leave memory cells intact: synth_xilinx must infer RAMB18/36.
+                            // Generic `memory` calls memory_map, expanding RAM into FFs/LUTs.
+                            // This made SERV consume 66,963 FDRE and zero BRAM in CI.
+                            'proc; opt',
                                 'synth_xilinx -flatten -abc9 -arch xc7 -top ' + topModule,
                             'write_json synth.json'
                         ].join('; ');
