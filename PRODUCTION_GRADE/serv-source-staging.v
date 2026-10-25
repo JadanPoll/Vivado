@@ -2883,3 +2883,771 @@ module serv_compdec
   end
 
   endmodule
+
+// === servile/servile_mux.v ===
+/*
+ * servile_mux.v : Simple Wishbone mux for the servile convenience wrapper.
+ *
+ * SPDX-FileCopyrightText: 2024 Olof Kindgren <olof.kindgren@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+module servile_mux
+  #(parameter [0:0]  sim = 1'b0, //Enable simulation features
+    parameter [31:0] sim_sig_adr = 32'h80000000,
+    parameter [31:0] sim_halt_adr = 32'h90000000)
+   (
+    input wire	       i_clk,
+    input wire	       i_rst,
+
+    input wire [31:0]  i_wb_cpu_adr,
+    input wire [31:0]  i_wb_cpu_dat,
+    input wire [3:0]   i_wb_cpu_sel,
+    input wire	       i_wb_cpu_we,
+    input wire	       i_wb_cpu_stb,
+    output wire [31:0] o_wb_cpu_rdt,
+    output wire	       o_wb_cpu_ack,
+
+    output wire [31:0] o_wb_mem_adr,
+    output wire [31:0] o_wb_mem_dat,
+    output wire [3:0]  o_wb_mem_sel,
+    output wire	       o_wb_mem_we,
+    output wire	       o_wb_mem_stb,
+    input wire [31:0]  i_wb_mem_rdt,
+    input wire	       i_wb_mem_ack,
+
+    output wire [31:0] o_wb_ext_adr,
+    output wire [31:0] o_wb_ext_dat,
+    output wire [3:0]  o_wb_ext_sel,
+    output wire	       o_wb_ext_we,
+    output wire	       o_wb_ext_stb,
+    input wire [31:0]  i_wb_ext_rdt,
+    input wire	       i_wb_ext_ack);
+
+   wire		       sig_en;
+   wire		       halt_en;
+   reg		       sim_ack;
+
+   wire		       ext = (i_wb_cpu_adr[31:30] != 2'b00);
+
+   assign o_wb_cpu_rdt = ext ? i_wb_ext_rdt : i_wb_mem_rdt;
+   assign o_wb_cpu_ack = i_wb_ext_ack | i_wb_mem_ack | sim_ack;
+
+   assign o_wb_mem_adr = i_wb_cpu_adr;
+   assign o_wb_mem_dat = i_wb_cpu_dat;
+   assign o_wb_mem_sel = i_wb_cpu_sel;
+   assign o_wb_mem_we  = i_wb_cpu_we;
+   assign o_wb_mem_stb = i_wb_cpu_stb & !ext & !(sig_en|halt_en);
+
+   assign o_wb_ext_adr = i_wb_cpu_adr;
+   assign o_wb_ext_dat = i_wb_cpu_dat;
+   assign o_wb_ext_sel = i_wb_cpu_sel;
+   assign o_wb_ext_we  = i_wb_cpu_we;
+   assign o_wb_ext_stb = i_wb_cpu_stb & ext & !(sig_en|halt_en);
+
+   generate
+      if (sim) begin
+
+	 integer      f = 0;
+
+	 assign sig_en  = |f & i_wb_cpu_we & (i_wb_cpu_adr == sim_sig_adr);
+	 assign halt_en = i_wb_cpu_we & (i_wb_cpu_adr == sim_halt_adr);
+
+	 reg [1023:0] signature_file;
+
+	 initial
+	   /* verilator lint_off WIDTH */
+	   if ($value$plusargs("signature=%s", signature_file)) begin
+	      $display("Writing signature to %0s", signature_file);
+	      f = $fopen(signature_file, "w");
+	   end
+	 /* verilator lint_on WIDTH */
+
+	 always @(posedge i_clk) begin
+	    sim_ack <= 1'b0;
+	    if (i_wb_cpu_stb & !sim_ack) begin
+	       sim_ack <= sig_en|halt_en;
+	       if (sig_en & (f != 0))
+		 $fwrite(f, "%c", i_wb_cpu_dat[7:0]);
+	       else if(halt_en) begin
+		  $display("Test complete");
+		  $finish;
+	       end
+	    end
+	    if (i_rst)
+	      sim_ack <= 1'b0;
+	 end
+      end else begin
+	 assign sig_en = 1'b0;
+	 assign halt_en = 1'b0;
+	 initial sim_ack = 1'b0;
+      end
+   endgenerate
+
+endmodule
+
+// === servile/servile_arbiter.v ===
+/*
+ * servile_arbiter.v : I/D arbiter for the servile convenience wrapper.
+ *  Relies on the fact that not ibus and dbus are active at the same time.
+ *
+ * SPDX-FileCopyrightText: 2024 Olof Kindgren <olof.kindgren@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+module servile_arbiter
+  (
+   input wire [31:0]  i_wb_cpu_dbus_adr,
+   input wire [31:0]  i_wb_cpu_dbus_dat,
+   input wire [3:0]   i_wb_cpu_dbus_sel,
+   input wire 	      i_wb_cpu_dbus_we,
+   input wire 	      i_wb_cpu_dbus_stb,
+   output wire [31:0] o_wb_cpu_dbus_rdt,
+   output wire 	      o_wb_cpu_dbus_ack,
+
+   input wire [31:0]  i_wb_cpu_ibus_adr,
+   input wire 	      i_wb_cpu_ibus_stb,
+   output wire [31:0] o_wb_cpu_ibus_rdt,
+   output wire 	      o_wb_cpu_ibus_ack,
+
+   output wire [31:0] o_wb_mem_adr,
+   output wire [31:0] o_wb_mem_dat,
+   output wire [3:0]  o_wb_mem_sel,
+   output wire 	      o_wb_mem_we,
+   output wire 	      o_wb_mem_stb,
+   input wire [31:0]  i_wb_mem_rdt,
+   input wire 	      i_wb_mem_ack);
+
+   assign o_wb_cpu_dbus_rdt = i_wb_mem_rdt;
+   assign o_wb_cpu_dbus_ack = i_wb_mem_ack & !i_wb_cpu_ibus_stb;
+
+   assign o_wb_cpu_ibus_rdt = i_wb_mem_rdt;
+   assign o_wb_cpu_ibus_ack = i_wb_mem_ack & i_wb_cpu_ibus_stb;
+
+   assign o_wb_mem_adr = i_wb_cpu_ibus_stb ? i_wb_cpu_ibus_adr : i_wb_cpu_dbus_adr;
+   assign o_wb_mem_dat = i_wb_cpu_dbus_dat;
+   assign o_wb_mem_sel = i_wb_cpu_dbus_sel;
+   assign o_wb_mem_we  = i_wb_cpu_dbus_we & !i_wb_cpu_ibus_stb;
+   assign o_wb_mem_stb = i_wb_cpu_ibus_stb | i_wb_cpu_dbus_stb;
+
+
+endmodule
+
+// === servile/servile.v ===
+/*
+ * servile.v : Top-level for Servile, the SERV convenience wrapper
+ *
+ * SPDX-FileCopyrightText: 2024 Olof Kindgren <olof.kindgren@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+`default_nettype none
+module servile
+  #(
+    parameter	    width = 1,
+    parameter	    reset_pc = 32'h00000000,
+    parameter	    reset_strategy = "MINI",
+    parameter	    rf_width = 2*width,
+    parameter [0:0] sim = 1'b0,
+    parameter [0:0] debug = 1'b0,
+    parameter [0:0] with_c = 1'b0,
+    parameter [0:0] with_csr = 1'b0,
+    parameter [0:0] with_mdu = 1'b0,
+    //Internally calculated. Do not touch
+    parameter	    B = width-1,
+    parameter	    regs = 32+with_csr*4,
+    parameter	    rf_l2d = $clog2(regs*32/rf_width))
+  (
+   input wire		      i_clk,
+   input wire		      i_rst,
+   input wire		      i_timer_irq,
+
+   //Memory (WB) interface
+   output wire [31:0]	      o_wb_mem_adr,
+   output wire [31:0]	      o_wb_mem_dat,
+   output wire [3:0]	      o_wb_mem_sel,
+   output wire		      o_wb_mem_we ,
+   output wire		      o_wb_mem_stb,
+   input wire [31:0]	      i_wb_mem_rdt,
+   input wire		      i_wb_mem_ack,
+
+   //Extension (WB) interface
+   output wire [31:0]	      o_wb_ext_adr,
+   output wire [31:0]	      o_wb_ext_dat,
+   output wire [3:0]	      o_wb_ext_sel,
+   output wire		      o_wb_ext_we ,
+   output wire		      o_wb_ext_stb,
+   input wire [31:0]	      i_wb_ext_rdt,
+   input wire		      i_wb_ext_ack,
+
+   //RF (SRAM) interface
+   output wire [rf_l2d-1:0]   o_rf_waddr,
+   output wire [rf_width-1:0] o_rf_wdata,
+   output wire		      o_rf_wen,
+   output wire [rf_l2d-1:0]   o_rf_raddr,
+   input wire [rf_width-1:0]  i_rf_rdata,
+   output wire		      o_rf_ren);
+
+
+
+   wire [31:0] 	wb_ibus_adr;
+   wire 	wb_ibus_stb;
+   wire [31:0] 	wb_ibus_rdt;
+   wire 	wb_ibus_ack;
+
+   wire [31:0] 	wb_dbus_adr;
+   wire [31:0] 	wb_dbus_dat;
+   wire [3:0] 	wb_dbus_sel;
+   wire 	wb_dbus_we;
+   wire 	wb_dbus_stb;
+   wire [31:0] 	wb_dbus_rdt;
+   wire 	wb_dbus_ack;
+
+   wire [31:0] 	wb_dmem_adr;
+   wire [31:0] 	wb_dmem_dat;
+   wire [3:0] 	wb_dmem_sel;
+   wire 	wb_dmem_we;
+   wire 	wb_dmem_stb;
+   wire [31:0] 	wb_dmem_rdt;
+   wire 	wb_dmem_ack;
+
+   wire 		   rf_wreq;
+   wire 		   rf_rreq;
+   wire [$clog2(regs)-1:0] wreg0;
+   wire [$clog2(regs)-1:0] wreg1;
+   wire 		   wen0;
+   wire 		   wen1;
+   wire [B:0]		   wdata0;
+   wire [B:0]		   wdata1;
+   wire [$clog2(regs)-1:0] rreg0;
+   wire [$clog2(regs)-1:0] rreg1;
+   wire 		   rf_ready;
+   wire [B:0]		   rdata0;
+   wire [B:0]		   rdata1;
+
+   wire [31:0]		   mdu_rs1;
+   wire [31:0]		   mdu_rs2;
+   wire [ 2:0]		   mdu_op;
+   wire			   mdu_valid;
+   wire [31:0]		   mdu_rd;
+   wire			   mdu_ready;
+
+   servile_mux
+     #(.sim (sim))
+   mux
+     (.i_clk        (i_clk),
+      .i_rst        (i_rst & (reset_strategy != "NONE")),
+
+      .i_wb_cpu_adr (wb_dbus_adr),
+      .i_wb_cpu_dat (wb_dbus_dat),
+      .i_wb_cpu_sel (wb_dbus_sel),
+      .i_wb_cpu_we  (wb_dbus_we),
+      .i_wb_cpu_stb (wb_dbus_stb),
+      .o_wb_cpu_rdt (wb_dbus_rdt),
+      .o_wb_cpu_ack (wb_dbus_ack),
+
+      .o_wb_mem_adr (wb_dmem_adr),
+      .o_wb_mem_dat (wb_dmem_dat),
+      .o_wb_mem_sel (wb_dmem_sel),
+      .o_wb_mem_we  (wb_dmem_we),
+      .o_wb_mem_stb (wb_dmem_stb),
+      .i_wb_mem_rdt (wb_dmem_rdt),
+      .i_wb_mem_ack (wb_dmem_ack),
+
+      .o_wb_ext_adr (o_wb_ext_adr),
+      .o_wb_ext_dat (o_wb_ext_dat),
+      .o_wb_ext_sel (o_wb_ext_sel),
+      .o_wb_ext_we  (o_wb_ext_we),
+      .o_wb_ext_stb (o_wb_ext_stb),
+      .i_wb_ext_rdt (i_wb_ext_rdt),
+      .i_wb_ext_ack (i_wb_ext_ack));
+
+   servile_arbiter arbiter
+     (.i_wb_cpu_dbus_adr (wb_dmem_adr),
+      .i_wb_cpu_dbus_dat (wb_dmem_dat),
+      .i_wb_cpu_dbus_sel (wb_dmem_sel),
+      .i_wb_cpu_dbus_we  (wb_dmem_we ),
+      .i_wb_cpu_dbus_stb (wb_dmem_stb),
+      .o_wb_cpu_dbus_rdt (wb_dmem_rdt),
+      .o_wb_cpu_dbus_ack (wb_dmem_ack),
+
+      .i_wb_cpu_ibus_adr (wb_ibus_adr),
+      .i_wb_cpu_ibus_stb (wb_ibus_stb),
+      .o_wb_cpu_ibus_rdt (wb_ibus_rdt),
+      .o_wb_cpu_ibus_ack (wb_ibus_ack),
+
+      .o_wb_mem_adr (o_wb_mem_adr),
+      .o_wb_mem_dat (o_wb_mem_dat),
+      .o_wb_mem_sel (o_wb_mem_sel),
+      .o_wb_mem_we  (o_wb_mem_we ),
+      .o_wb_mem_stb (o_wb_mem_stb),
+      .i_wb_mem_rdt (i_wb_mem_rdt),
+      .i_wb_mem_ack (i_wb_mem_ack));
+
+
+
+   serv_rf_ram_if
+     #(.width    (rf_width),
+       .W        (width),
+       .reset_strategy (reset_strategy),
+       .csr_regs (with_csr*4))
+   rf_ram_if
+     (.i_clk    (i_clk),
+      .i_rst    (i_rst),
+      //RF IF
+      .i_wreq   (rf_wreq),
+      .i_rreq   (rf_rreq),
+      .o_ready  (rf_ready),
+      .i_wreg0  (wreg0),
+      .i_wreg1  (wreg1),
+      .i_wen0   (wen0),
+      .i_wen1   (wen1),
+      .i_wdata0 (wdata0),
+      .i_wdata1 (wdata1),
+      .i_rreg0  (rreg0),
+      .i_rreg1  (rreg1),
+      .o_rdata0 (rdata0),
+      .o_rdata1 (rdata1),
+      //SRAM IF
+      .o_waddr  (o_rf_waddr),
+      .o_wdata  (o_rf_wdata),
+      .o_wen    (o_rf_wen),
+      .o_raddr  (o_rf_raddr),
+      .o_ren    (o_rf_ren),
+      .i_rdata  (i_rf_rdata));
+
+   generate
+      if (with_mdu) begin : gen_mdu
+	 mdu_top mdu_serv
+	   (.i_clk       (i_clk),
+	    .i_rst       (i_rst),
+	    .i_mdu_rs1   (mdu_rs1),
+	    .i_mdu_rs2   (mdu_rs2),
+	    .i_mdu_op    (mdu_op),
+	    .i_mdu_valid (mdu_valid),
+	    .o_mdu_ready (mdu_ready),
+	    .o_mdu_rd    (mdu_rd));
+      end else begin
+	 assign mdu_ready = 1'b0;
+	 assign mdu_rd = 32'd0;
+      end
+   endgenerate
+
+   serv_top
+     #(
+       .WITH_CSR       (with_csr?1:0),
+       .W              (width),
+       .PRE_REGISTER   (1'b1),
+       .RESET_STRATEGY (reset_strategy),
+       .RESET_PC       (reset_pc),
+       .DEBUG          (debug),
+       .MDU            (with_mdu),
+       .COMPRESSED     (with_c))
+   cpu
+     (
+      .clk         (i_clk),
+      .i_rst       (i_rst),
+      .i_timer_irq (i_timer_irq),
+
+`ifdef RISCV_FORMAL
+      .rvfi_valid     (),
+      .rvfi_order     (),
+      .rvfi_insn      (),
+      .rvfi_trap      (),
+      .rvfi_halt      (),
+      .rvfi_intr      (),
+      .rvfi_mode      (),
+      .rvfi_ixl       (),
+      .rvfi_rs1_addr  (),
+      .rvfi_rs2_addr  (),
+      .rvfi_rs1_rdata (),
+      .rvfi_rs2_rdata (),
+      .rvfi_rd_addr   (),
+      .rvfi_rd_wdata  (),
+      .rvfi_pc_rdata  (),
+      .rvfi_pc_wdata  (),
+      .rvfi_mem_addr  (),
+      .rvfi_mem_rmask (),
+      .rvfi_mem_wmask (),
+      .rvfi_mem_rdata (),
+      .rvfi_mem_wdata (),
+`endif
+      //RF IF
+      .o_rf_rreq   (rf_rreq),
+      .o_rf_wreq   (rf_wreq),
+      .i_rf_ready  (rf_ready),
+      .o_wreg0     (wreg0),
+      .o_wreg1     (wreg1),
+      .o_wen0      (wen0),
+      .o_wen1      (wen1),
+      .o_wdata0    (wdata0),
+      .o_wdata1    (wdata1),
+      .o_rreg0     (rreg0),
+      .o_rreg1     (rreg1),
+      .i_rdata0    (rdata0),
+      .i_rdata1    (rdata1),
+
+      //Instruction bus
+      .o_ibus_adr  (wb_ibus_adr),
+      .o_ibus_cyc  (wb_ibus_stb),
+      .i_ibus_rdt  (wb_ibus_rdt),
+      .i_ibus_ack  (wb_ibus_ack),
+
+      //Data bus
+      .o_dbus_adr  (wb_dbus_adr),
+      .o_dbus_dat  (wb_dbus_dat),
+      .o_dbus_sel  (wb_dbus_sel),
+      .o_dbus_we   (wb_dbus_we),
+      .o_dbus_cyc  (wb_dbus_stb),
+      .i_dbus_rdt  (wb_dbus_rdt),
+      .i_dbus_ack  (wb_dbus_ack),
+
+      //Extension IF
+      .o_ext_rs1    (mdu_rs1),
+      .o_ext_rs2    (mdu_rs2),
+      .o_ext_funct3 (mdu_op),
+      .i_ext_rd     (mdu_rd),
+      .i_ext_ready  (mdu_ready),
+      //MDU
+      .o_mdu_valid  (mdu_valid));
+
+endmodule
+`default_nettype wire
+
+// === servant/servant_mux.v ===
+/*
+ mem = 00
+ gpio = 01
+ timer = 10
+ testcon = 11
+ */
+module servant_mux
+  (
+   input wire 	      i_clk,
+   input wire 	      i_rst,
+   input wire [31:0]  i_wb_cpu_adr,
+   input wire [31:0]  i_wb_cpu_dat,
+   input wire [3:0]   i_wb_cpu_sel,
+   input wire 	      i_wb_cpu_we,
+   input wire 	      i_wb_cpu_cyc,
+   output wire [31:0] o_wb_cpu_rdt,
+   output reg 	      o_wb_cpu_ack,
+
+   output wire 	      o_wb_gpio_dat,
+   output wire 	      o_wb_gpio_we,
+   output wire 	      o_wb_gpio_cyc,
+   input wire 	      i_wb_gpio_rdt,
+
+   output wire [31:0] o_wb_timer_dat,
+   output wire 	      o_wb_timer_we,
+   output wire 	      o_wb_timer_cyc,
+   input wire [31:0]  i_wb_timer_rdt);
+
+   parameter sim = 0;
+
+   wire [1:0] 	  s = i_wb_cpu_adr[31:30];
+
+   assign o_wb_cpu_rdt = s[1] ? i_wb_timer_rdt : {31'd0,i_wb_gpio_rdt};
+
+   always @(posedge i_clk) begin
+      o_wb_cpu_ack <= 1'b0;
+      if (i_wb_cpu_cyc & !o_wb_cpu_ack)
+	o_wb_cpu_ack <= 1'b1;
+      if (i_rst)
+	o_wb_cpu_ack <= 1'b0;
+   end
+
+   assign o_wb_gpio_dat = i_wb_cpu_dat[0];
+   assign o_wb_gpio_we  = i_wb_cpu_we;
+   assign o_wb_gpio_cyc = i_wb_cpu_cyc & !s[1];
+
+   assign o_wb_timer_dat = i_wb_cpu_dat;
+   assign o_wb_timer_we  = i_wb_cpu_we;
+   assign o_wb_timer_cyc = i_wb_cpu_cyc & s[1];
+
+endmodule
+
+// === servant/servant_ram.v ===
+`default_nettype none
+module servant_ram
+  #(//Memory parameters
+    parameter depth = 256,
+    parameter aw    = $clog2(depth),
+    parameter RESET_STRATEGY = "",
+    parameter memfile = "")
+   (input wire 		i_wb_clk,
+    input wire 		i_wb_rst,
+    input wire [aw-1:2] i_wb_adr,
+    input wire [31:0] 	i_wb_dat,
+    input wire [3:0] 	i_wb_sel,
+    input wire 		i_wb_we,
+    input wire 		i_wb_cyc,
+    output reg [31:0] 	o_wb_rdt,
+    output reg 		o_wb_ack);
+
+   wire [3:0] 		we = {4{i_wb_we & i_wb_cyc}} & i_wb_sel;
+
+   reg [31:0] 		mem [0:depth/4-1] /* verilator public */;
+
+   wire [aw-3:0] 	addr = i_wb_adr[aw-1:2];
+
+   always @(posedge i_wb_clk)
+     if (i_wb_rst & (RESET_STRATEGY != "NONE"))
+       o_wb_ack <= 1'b0;
+     else
+       o_wb_ack <= i_wb_cyc & !o_wb_ack;
+
+   always @(posedge i_wb_clk) begin
+      if (we[0]) mem[addr][7:0]   <= i_wb_dat[7:0];
+      if (we[1]) mem[addr][15:8]  <= i_wb_dat[15:8];
+      if (we[2]) mem[addr][23:16] <= i_wb_dat[23:16];
+      if (we[3]) mem[addr][31:24] <= i_wb_dat[31:24];
+      o_wb_rdt <= mem[addr];
+   end
+
+   // Embedded sw/blinky.hex; browser Yosys source has no external mem file.
+   initial begin
+     mem[0] = 32'h40000537;
+     mem[1] = 32'h00050513;
+     mem[2] = 32'h00100337;
+     mem[3] = 32'h00000293;
+     mem[4] = 32'h00550023;
+     mem[5] = 32'h0012C293;
+     mem[6] = 32'h000073B3;
+     mem[7] = 32'h00138393;
+     mem[8] = 32'hFE731EE3;
+     mem[9] = 32'hFEDFF06F;
+     mem[10] = 32'h00000000;
+   end
+
+endmodule
+
+// === servant/servant_gpio.v ===
+module servant_gpio
+  (input wire i_wb_clk,
+   input wire i_wb_dat,
+   input wire i_wb_we,
+   input wire i_wb_cyc,
+   output reg o_wb_rdt,
+   output reg o_gpio);
+
+   always @(posedge i_wb_clk) begin
+      o_wb_rdt <= o_gpio;
+      if (i_wb_cyc & i_wb_we)
+	o_gpio <= i_wb_dat;
+   end
+endmodule
+
+// === servant/servant_timer.v ===
+`default_nettype none
+module servant_timer
+  #(parameter WIDTH = 16,
+    parameter RESET_STRATEGY = "",
+    parameter DIVIDER = 0)
+  (input wire 	     i_clk,
+   input wire 	     i_rst,
+   output reg 	     o_irq,
+   input wire [31:0] i_wb_dat,
+   input wire 	     i_wb_we,
+   input wire 	     i_wb_cyc,
+   output reg [31:0] o_wb_dat);
+
+   localparam HIGH = WIDTH-1-DIVIDER;
+
+   reg [WIDTH-1:0]   mtime;
+   reg signed [HIGH:0]      mtimecmp;
+
+   wire signed [HIGH:0]     mtimeslice = mtime[WIDTH-1:DIVIDER];
+
+   always @(mtimeslice) begin
+      o_wb_dat = 32'd0;
+      o_wb_dat[HIGH:0] = mtimeslice;
+   end
+
+   always @(posedge i_clk) begin
+      if (i_wb_cyc & i_wb_we)
+	mtimecmp <= i_wb_dat[HIGH:0];
+      mtime <= mtime + 'd1;
+      o_irq <= (mtimeslice - mtimecmp >= 0);
+      if (RESET_STRATEGY != "NONE")
+	if (i_rst) begin
+	   mtime <= 0;
+	   mtimecmp <= 0;
+	end
+   end
+endmodule
+
+// === servant/servant.v ===
+`default_nettype none
+module servant
+(
+ input wire  wb_clk,
+ input wire  wb_rst,
+ output wire q);
+
+   parameter memfile = "zephyr_hello.hex";
+   parameter memsize = 8192;
+   parameter reset_strategy = "MINI";
+   parameter width = 1;
+   parameter sim = 0;
+   parameter [0:0] debug = 1'b0;
+   parameter with_csr = 1;
+   parameter [0:0] compress = 0;
+   parameter [0:0] align = compress;
+
+
+`ifdef MDU
+   localparam [0:0] with_mdu = 1'b1;
+`else
+   localparam [0:0] with_mdu = 1'b0;
+`endif
+
+   localparam	   aw = $clog2(memsize);
+   localparam	   csr_regs = with_csr*4;
+
+   localparam	   rf_width = width * 2;
+   localparam	   rf_l2d   = $clog2((32+csr_regs)*32/rf_width);
+
+   wire 	timer_irq;
+
+
+   wire [31:0] 	wb_mem_adr;
+   wire [31:0] 	wb_mem_dat;
+   wire [3:0] 	wb_mem_sel;
+   wire 	wb_mem_we;
+   wire 	wb_mem_stb;
+   wire [31:0] 	wb_mem_rdt;
+   wire 	wb_mem_ack;
+
+   wire 	wb_gpio_dat;
+   wire 	wb_gpio_we;
+   wire 	wb_gpio_stb;
+   wire 	wb_gpio_rdt;
+
+   wire [31:0] 	wb_timer_dat;
+   wire 	wb_timer_we;
+   wire 	wb_timer_stb;
+   wire [31:0] 	wb_timer_rdt;
+
+   wire [31:0]	   wb_ext_adr;
+   wire [31:0]	   wb_ext_dat;
+   wire [3:0]	   wb_ext_sel;
+   wire		   wb_ext_we;
+   wire		   wb_ext_stb;
+   wire [31:0]	   wb_ext_rdt;
+   wire		   wb_ext_ack;
+
+   wire [rf_l2d-1:0]   rf_waddr;
+   wire [rf_width-1:0] rf_wdata;
+   wire		       rf_wen;
+   wire [rf_l2d-1:0]   rf_raddr;
+   wire		       rf_ren;
+   wire [rf_width-1:0] rf_rdata;
+
+   servant_mux servant_mux
+     (
+      .i_clk (wb_clk),
+      .i_rst (wb_rst & (reset_strategy != "NONE")),
+      .i_wb_cpu_adr (wb_ext_adr),
+      .i_wb_cpu_dat (wb_ext_dat),
+      .i_wb_cpu_sel (wb_ext_sel),
+      .i_wb_cpu_we  (wb_ext_we),
+      .i_wb_cpu_cyc (wb_ext_stb),
+      .o_wb_cpu_rdt (wb_ext_rdt),
+      .o_wb_cpu_ack (wb_ext_ack),
+
+      .o_wb_gpio_dat (wb_gpio_dat),
+      .o_wb_gpio_we  (wb_gpio_we),
+      .o_wb_gpio_cyc (wb_gpio_stb),
+      .i_wb_gpio_rdt (wb_gpio_rdt),
+
+      .o_wb_timer_dat (wb_timer_dat),
+      .o_wb_timer_we  (wb_timer_we),
+      .o_wb_timer_cyc (wb_timer_stb),
+      .i_wb_timer_rdt (wb_timer_rdt));
+
+   servant_ram
+     #(.memfile (memfile),
+       .depth (memsize),
+       .RESET_STRATEGY (reset_strategy))
+   ram
+     (// Wishbone interface
+      .i_wb_clk (wb_clk),
+      .i_wb_rst (wb_rst),
+      .i_wb_adr (wb_mem_adr[$clog2(memsize)-1:2]),
+      .i_wb_cyc (wb_mem_stb),
+      .i_wb_we  (wb_mem_we) ,
+      .i_wb_sel (wb_mem_sel),
+      .i_wb_dat (wb_mem_dat),
+      .o_wb_rdt (wb_mem_rdt),
+      .o_wb_ack (wb_mem_ack));
+
+   servant_timer
+     #(.RESET_STRATEGY (reset_strategy),
+       .WIDTH (32))
+   timer
+     (.i_clk    (wb_clk),
+      .i_rst    (wb_rst),
+      .o_irq    (timer_irq),
+      .i_wb_cyc (wb_timer_stb),
+      .i_wb_we  (wb_timer_we) ,
+      .i_wb_dat (wb_timer_dat),
+      .o_wb_dat (wb_timer_rdt));
+
+   servant_gpio gpio
+     (.i_wb_clk (wb_clk),
+      .i_wb_dat (wb_gpio_dat),
+      .i_wb_we  (wb_gpio_we),
+      .i_wb_cyc (wb_gpio_stb),
+      .o_wb_rdt (wb_gpio_rdt),
+      .o_gpio   (q));
+
+   serv_rf_ram
+     #(.width (rf_width),
+       .csr_regs (csr_regs))
+   rf_ram
+     (.i_clk    (wb_clk),
+      .i_waddr  (rf_waddr),
+      .i_wdata  (rf_wdata),
+      .i_wen    (rf_wen),
+      .i_raddr  (rf_raddr),
+      .i_ren    (rf_ren),
+      .o_rdata  (rf_rdata));
+
+   servile
+     #(.width    (width),
+       .sim      (sim[0]),
+       .debug    (debug),
+       .with_c   (compress[0]),
+       .with_csr (with_csr[0]),
+       .with_mdu (with_mdu))
+   cpu
+     (
+      .i_clk        (wb_clk),
+      .i_rst        (wb_rst),
+      .i_timer_irq  (timer_irq),
+
+      .o_wb_mem_adr   (wb_mem_adr),
+      .o_wb_mem_dat   (wb_mem_dat),
+      .o_wb_mem_sel   (wb_mem_sel),
+      .o_wb_mem_we    (wb_mem_we),
+      .o_wb_mem_stb   (wb_mem_stb),
+      .i_wb_mem_rdt   (wb_mem_rdt),
+      .i_wb_mem_ack   (wb_mem_ack),
+
+      .o_wb_ext_adr   (wb_ext_adr),
+      .o_wb_ext_dat   (wb_ext_dat),
+      .o_wb_ext_sel   (wb_ext_sel),
+      .o_wb_ext_we    (wb_ext_we),
+      .o_wb_ext_stb   (wb_ext_stb),
+      .i_wb_ext_rdt   (wb_ext_rdt),
+      .i_wb_ext_ack   (wb_ext_ack),
+
+      .o_rf_waddr  (rf_waddr),
+      .o_rf_wdata  (rf_wdata),
+      .o_rf_wen    (rf_wen),
+      .o_rf_raddr  (rf_raddr),
+      .o_rf_ren    (rf_ren),
+      .i_rf_rdata  (rf_rdata));
+
+endmodule
