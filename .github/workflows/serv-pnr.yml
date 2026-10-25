@@ -1,0 +1,37 @@
+name: SERV SoC FPGA Route
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/serv-pnr.yml'
+      - 'tests/headless-pnr-*.cjs'
+      - 'PRODUCTION_GRADE/DEFAULTS/serv_blinky/**'
+      - 'FINAL/index.html'
+jobs:
+  serv-route:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned Yosys
+        run: python3 -m pip install --break-system-packages yowasp-yosys==0.65.0.0.post1154 brotli
+      - name: Prepare chipdb
+        run: |
+          mkdir -p pnr-repro-output
+          python3 -c "import brotli,pathlib; p=pathlib.Path('PRODUCTION_GRADE/xc7s50.bin.br'); pathlib.Path('pnr-repro-output/chipdb.bin').write_bytes(brotli.decompress(p.read_bytes()))"
+      - name: Synthesize and route SERV with RAMB inference
+        env:
+          PNR_ONLY: serv_blinky
+          REQUIRE_BRAM: '1'
+        run: node tests/headless-pnr-matrix.cjs
+      - name: Upload detailed SERV evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: serv-pnr-evidence
+          path: pnr-repro-output/DEFAULTS_serv_blinky/
+          if-no-files-found: warn
