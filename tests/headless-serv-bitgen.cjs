@@ -17,7 +17,7 @@ const ctx={console,TextEncoder,TextDecoder,Uint8Array,Uint32Array,WebAssembly,UR
 ctx.self=ctx;
 ctx.self.location={href:'file://'+path.join(base,'xc7frames2bit.js')};
 ctx.self.postMessage=(data)=>{if(data.type==='success')output=data;else if(data.type==='error')error=data.message;
-    else if(data.type==='log' && (/MISSING|Unmapped|Non-zero|SUMMARY|error/i.test(data.text)))console.log(data.text);};
+    else if(data.type==='log')console.log(data.text);};
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(base,'fasm2frames2.js'),'utf8'),ctx,{filename:'fasm2frames2.js'});
 ctx.self.onmessage({data:{fasmStr:fasm,mapData:map}});
