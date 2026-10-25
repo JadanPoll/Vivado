@@ -11,15 +11,26 @@ fs.mkdirSync(outDir,{recursive:true});
 const cases=[
 ...fs.readdirSync(path.join(root,'PRODUCTION_GRADE/DEFAULTS'),{withFileTypes:true}).filter(x=>x.isDirectory()).map(x=>'PRODUCTION_GRADE/DEFAULTS/'+x.name),
 ...fs.readdirSync(path.join(root,'PRODUCTION_GRADE/TESTS'),{withFileTypes:true}).filter(x=>x.isDirectory()).map(x=>'PRODUCTION_GRADE/TESTS/'+x.name),
-];
+].filter(dir => !process.env.PNR_ONLY || dir.split('/').at(-1)===process.env.PNR_ONLY);
 function synth(dir,slug){
  const scratch=path.join(outDir,slug);fs.mkdirSync(scratch,{recursive:true});
  const sourceName=fs.existsSync(path.join(root,dir,'top.v'))?'top.v':'hdmi.sv';
  const src=fs.readFileSync(path.join(root,dir,sourceName),'utf8');
  fs.writeFileSync(path.join(scratch,'source_0.v'),src);
- const script='read_verilog -sv source_0.v; hierarchy -top top; proc; opt; memory; opt; synth_xilinx -flatten -abc9 -arch xc7 -top top; write_json synth.json';
+ const script='read_verilog -sv source_0.v; hierarchy -top top; proc; opt; synth_xilinx -flatten -abc9 -arch xc7 -top top; write_json synth.json';
  const r=cp.spawnSync('yowasp-yosys',['-p',script],{cwd:scratch,encoding:'utf8',timeout:180000,maxBuffer:32*1024*1024});
  fs.writeFileSync(path.join(scratch,'yosys.log'),(r.stdout||'')+'\nSTDERR\n'+(r.stderr||''));
+ if(fs.existsSync(path.join(scratch,'synth.json'))){
+   const json=JSON.parse(fs.readFileSync(path.join(scratch,'synth.json'),'utf8'));
+   const top=json.modules?.top;
+   if(top){ const totals={};for(const cell of Object.values(top.cells||{})) totals[cell.type]=(totals[cell.type]||0)+1;
+     const summary={design:dir,flipflops:Object.entries(totals).filter(([t])=>/^FD/.test(t)).reduce((n,[,v])=>n+v,0),
+       bram:Object.entries(totals).filter(([t])=>/^RAMB/.test(t)).reduce((n,[,v])=>n+v,0),
+       luts:Object.entries(totals).filter(([t])=>/^LUT/.test(t)).reduce((n,[,v])=>n+v,0),cells:Object.values(totals).reduce((a,b)=>a+b,0)};
+     console.log('SYNTH_RESOURCES '+JSON.stringify(summary));
+     if(process.env.REQUIRE_BRAM==='1' && summary.bram===0) throw Error('Memory inference failure: no RAMB cells');
+   }
+ }
  if(r.error||r.status!==0||!fs.existsSync(path.join(scratch,'synth.json')))throw Error('Yosys failed '+String(r.error||r.status));
  return scratch;
 }
@@ -56,6 +67,13 @@ function runPnr(dir,slug,variant='original',xdcText=null,frequencyMHz=null,extra
    try {synth(dir,slug);let r=await runPnr(dir,slug);r.synthesis_ms=Math.round(performance.now()-begin-r.elapsed_ms);summary.push(r);}
    catch(e){summary.push({design:dir,result:'SYNTH_FAIL',error:String(e.stack||e)});}
    console.log(JSON.stringify(summary.at(-1)));
+ }
+ if(process.env.PNR_ONLY){
+   const passing=summary.filter(r=>r.variant==='original'&&r.result==='PASS');
+   const allGood=passing.length===cases.length;
+   console.log('SERV_TARGETED_SUMMARY '+JSON.stringify(summary));
+   if(!allGood)process.exitCode=1;
+   return;
  }
  // Diagnose parseXdc failures without resynthesizing or changing netlist.
  const blink='PRODUCTION_GRADE/DEFAULTS/04_blink';
