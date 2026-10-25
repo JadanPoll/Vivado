@@ -8,6 +8,67 @@ module top(input wire clk,input wire BTN,output wire LED);
   servant #(.memfile(""),.memsize(8192)) soc(.wb_clk(clk),.wb_rst(cpu_reset),.q(LED));
 endmodule
 
+// Hardware composition probe. Select top module "top_probe" and top_probe.xdc.
+// This does not change the existing top module or upstream SERV internals.
+// LEDs are latched milestones (except heartbeat/reset/GPIO output) so a
+// missed short pulse remains observable without a logic analyzer.
+module top_probe (
+  input wire clk,
+  input wire BTN,
+  output wire [7:0] LED
+);
+  reg [7:0] startup = 8'd0;
+  always @(posedge clk)
+    if (startup != 8'hff) startup <= startup + 1'b1;
+
+  wire reset_cpu = (startup != 8'hff) | BTN;
+  wire gpio;
+  servant #(.memfile(""), .memsize(8192)) soc(
+    .wb_clk(clk), .wb_rst(reset_cpu), .q(gpio)
+  );
+
+  // Same clock, output, reset and DDR-free GPIO paths as the proved defaults.
+  reg [25:0] heartbeat = 26'd0;
+  always @(posedge clk) heartbeat <= heartbeat + 26'd1;
+
+  reg seen_fetch_ack = 1'b0;
+  reg seen_boot_word = 1'b0;
+  reg seen_pc_advance = 1'b0;
+  reg seen_gpio_write = 1'b0;
+  reg seen_bad_boot_word = 1'b0;
+  wire ibus_ack = soc.cpu.wb_ibus_ack;
+  wire ibus_cyc = soc.cpu.wb_ibus_stb;
+  wire [31:0] ibus_addr = soc.cpu.wb_ibus_adr;
+
+  always @(posedge clk) begin
+    if (reset_cpu) begin
+      seen_fetch_ack <= 1'b0;
+      seen_boot_word <= 1'b0;
+      seen_pc_advance <= 1'b0;
+      seen_gpio_write <= 1'b0;
+      seen_bad_boot_word <= 1'b0;
+    end else begin
+      if (ibus_cyc && ibus_ack) seen_fetch_ack <= 1'b1;
+      if (ibus_cyc && ibus_ack && ibus_addr == 32'h00000000) begin
+        if (soc.wb_mem_rdt == 32'h40000537) seen_boot_word <= 1'b1;
+        else seen_bad_boot_word <= 1'b1;
+      end
+      if (ibus_cyc && ibus_ack && ibus_addr != 32'h00000000)
+        seen_pc_advance <= 1'b1;
+      if (soc.wb_gpio_stb && soc.wb_gpio_we)
+        seen_gpio_write <= 1'b1;
+    end
+  end
+  assign LED[0] = heartbeat[25];      // Known primitive: free-running counter
+  assign LED[1] = !reset_cpu;        // Known primitive: reset release
+  assign LED[2] = seen_fetch_ack;    // NEW: instruction ACK acknowledged
+  assign LED[3] = seen_boot_word;    // NEW: first BRAM word actually correct
+  assign LED[4] = seen_pc_advance;   // NEW: CPU progressed past reset PC
+  assign LED[5] = seen_gpio_write;   // NEW: CPU performed MMIO GPIO store
+  assign LED[6] = gpio;              // NEW: actual CPU-controlled GPIO
+  assign LED[7] = seen_bad_boot_word;// NEW: wrong/unknown boot instruction
+endmodule
+
 // === rtl/serv_bufreg.v ===
 /*
  * serv_bufreg.v : SERV buffer register for load/store address and shift data
