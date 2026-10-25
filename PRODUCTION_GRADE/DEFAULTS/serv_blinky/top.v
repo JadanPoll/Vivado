@@ -23,8 +23,12 @@ module top_probe (
 
   wire reset_cpu = (startup != 8'hff) | BTN;
   wire gpio;
+  wire [31:0] mem_adr, mem_rdt;
+  wire mem_ack, gpio_store;
   servant #(.memfile(""), .memsize(8192)) soc(
-    .wb_clk(clk), .wb_rst(reset_cpu), .q(gpio)
+    .wb_clk(clk), .wb_rst(reset_cpu), .q(gpio),
+    .dbg_mem_adr(mem_adr), .dbg_mem_rdt(mem_rdt),
+    .dbg_mem_ack(mem_ack), .dbg_gpio_store(gpio_store)
   );
 
   // Same clock, output, reset and DDR-free GPIO paths as the proved defaults.
@@ -36,9 +40,8 @@ module top_probe (
   reg seen_pc_advance = 1'b0;
   reg seen_gpio_write = 1'b0;
   reg seen_bad_boot_word = 1'b0;
-  wire ibus_ack = soc.cpu.wb_ibus_ack;
-  wire ibus_cyc = soc.cpu.wb_ibus_stb;
-  wire [31:0] ibus_addr = soc.cpu.wb_ibus_adr;
+  // The blinky ROM makes no data-memory requests; memory ACKs indicate
+  // instruction fetches. GPIO is on the separate extension bus.
 
   always @(posedge clk) begin
     if (reset_cpu) begin
@@ -48,14 +51,14 @@ module top_probe (
       seen_gpio_write <= 1'b0;
       seen_bad_boot_word <= 1'b0;
     end else begin
-      if (ibus_cyc && ibus_ack) seen_fetch_ack <= 1'b1;
-      if (ibus_cyc && ibus_ack && ibus_addr == 32'h00000000) begin
-        if (soc.wb_mem_rdt == 32'h40000537) seen_boot_word <= 1'b1;
+      if (mem_ack) seen_fetch_ack <= 1'b1;
+      if (mem_ack && mem_adr == 32'h00000000) begin
+        if (mem_rdt == 32'h40000537) seen_boot_word <= 1'b1;
         else seen_bad_boot_word <= 1'b1;
       end
-      if (ibus_cyc && ibus_ack && ibus_addr != 32'h00000000)
+      if (mem_ack && mem_adr != 32'h00000000)
         seen_pc_advance <= 1'b1;
-      if (soc.wb_gpio_stb && soc.wb_gpio_we)
+      if (gpio_store)
         seen_gpio_write <= 1'b1;
     end
   end
@@ -3544,7 +3547,12 @@ module servant
 (
  input wire  wb_clk,
  input wire  wb_rst,
- output wire q);
+ output wire q,
+ // Observation outputs may be left unconnected in the normal design.
+ output wire [31:0] dbg_mem_adr,
+ output wire [31:0] dbg_mem_rdt,
+ output wire dbg_mem_ack,
+ output wire dbg_gpio_store);
 
    parameter memfile = "zephyr_hello.hex";
    parameter memsize = 8192;
@@ -3604,6 +3612,11 @@ module servant
    wire [rf_l2d-1:0]   rf_raddr;
    wire		       rf_ren;
    wire [rf_width-1:0] rf_rdata;
+
+   assign dbg_mem_adr = wb_mem_adr;
+   assign dbg_mem_rdt = wb_mem_rdt;
+   assign dbg_mem_ack = wb_mem_stb & wb_mem_ack;
+   assign dbg_gpio_store = wb_gpio_stb & wb_gpio_we;
 
    servant_mux servant_mux
      (
