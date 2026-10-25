@@ -1,0 +1,46 @@
+name: SERV RTL Composition Probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/serv-probe.yml'
+      - 'PRODUCTION_GRADE/DEFAULTS/serv_blinky/top.v'
+      - 'PRODUCTION_GRADE/DEFAULTS/serv_blinky/top_probe.xdc'
+      - 'tests/headless-pnr-matrix.cjs'
+      - 'tests/headless-serv-bitgen.cjs'
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned Yosys and database decoder
+        run: python3 -m pip install --break-system-packages yowasp-yosys==0.65.0.0.post1154 brotli
+      - name: Prepare Urbana database
+        run: |
+          mkdir -p pnr-repro-output
+          python3 -c "import brotli,pathlib; p=pathlib.Path('PRODUCTION_GRADE/xc7s50.bin.br'); pathlib.Path('pnr-repro-output/chipdb.bin').write_bytes(brotli.decompress(p.read_bytes()))"
+      - name: Build only diagnostic RTL composition probe
+        env:
+          PNR_ONLY: serv_blinky
+          PNR_TOP: top_probe
+          PNR_XDC: top_probe.xdc
+          REQUIRE_BRAM: '1'
+        run: node tests/headless-pnr-matrix.cjs
+      - name: Classify diagnostic probe FASM features
+        run: node tests/headless-serv-fasm-audit.cjs
+      - name: Assemble diagnostic bitstream
+        env:
+          PNR_TOP: top_probe
+        run: node tests/headless-serv-bitgen.cjs
+      - name: Preserve reproducible probe inputs and outputs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: serv-composition-probe
+          path: pnr-repro-output/DEFAULTS_serv_blinky/
+          if-no-files-found: warn
