@@ -55,7 +55,8 @@ function runFrames(){
  result.then(msg=>{
    const arr=Buffer.from(msg.bitstream);
    if(arr.length<100000)throw Error('Bitstream implausibly short: '+arr.length);
-   const bitPath=path.join(dir,'serv_blinky.bit');
+   const bitName=(process.env.PNR_TOP==='top_probe')?'serv_probe.bit':'serv_blinky.bit';
+   const bitPath=path.join(dir,bitName);
    fs.writeFileSync(bitPath,arr);
    console.log('BITSTREAM '+JSON.stringify({bytes:arr.length,path:bitPath}));
  }).catch(err=>{console.error('BITSTREAM_ERROR '+String(err.stack||err));process.exitCode=1;});
