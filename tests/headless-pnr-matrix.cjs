@@ -17,12 +17,14 @@ function synth(dir,slug){
  const sourceName=fs.existsSync(path.join(root,dir,'top.v'))?'top.v':'hdmi.sv';
  const src=fs.readFileSync(path.join(root,dir,sourceName),'utf8');
  fs.writeFileSync(path.join(scratch,'source_0.v'),src);
- const script='read_verilog -sv source_0.v; hierarchy -top top; proc; opt; synth_xilinx -flatten -abc9 -arch xc7 -top top; write_json synth.json';
+ const topName=process.env.PNR_TOP || 'top';
+ if(!/^[A-Za-z_][A-Za-z_0-9]*$/.test(topName))throw Error('Invalid PNR_TOP');
+ const script=`read_verilog -sv source_0.v; hierarchy -top ${topName}; proc; opt; synth_xilinx -flatten -abc9 -arch xc7 -top ${topName}; write_json synth.json`;
  const r=cp.spawnSync('yowasp-yosys',['-p',script],{cwd:scratch,encoding:'utf8',timeout:180000,maxBuffer:32*1024*1024});
  fs.writeFileSync(path.join(scratch,'yosys.log'),(r.stdout||'')+'\nSTDERR\n'+(r.stderr||''));
  if(fs.existsSync(path.join(scratch,'synth.json'))){
    const json=JSON.parse(fs.readFileSync(path.join(scratch,'synth.json'),'utf8'));
-   const top=json.modules?.top;
+   const top=json.modules?.[topName];
    if(top){ const totals={};for(const cell of Object.values(top.cells||{})) totals[cell.type]=(totals[cell.type]||0)+1;
      const summary={design:dir,flipflops:Object.entries(totals).filter(([t])=>/^FD/.test(t)).reduce((n,[,v])=>n+v,0),
        bram:Object.entries(totals).filter(([t])=>/^RAMB/.test(t)).reduce((n,[,v])=>n+v,0),
@@ -40,7 +42,9 @@ function runPnr(dir,slug,variant='original',xdcText=null,frequencyMHz=null,extra
    const begin=performance.now(),messages=[];
    const scratch=path.join(outDir,slug);
    const xdcPath=path.join(scratch,variant+'.xdc');
-   const originalXdc=fs.existsSync(path.join(root,dir,'top.xdc'))?path.join(root,dir,'top.xdc'):path.join(root,dir,'hdmi.xdc');
+   const preferred=process.env.PNR_XDC || 'top.xdc';
+   if(!/^[A-Za-z_0-9.\-]+$/.test(preferred))throw Error('Invalid PNR_XDC');
+   const originalXdc=fs.existsSync(path.join(root,dir,preferred))?path.join(root,dir,preferred):path.join(root,dir,'hdmi.xdc');
    fs.writeFileSync(xdcPath,xdcText===null?fs.readFileSync(originalXdc,'utf8'):xdcText);
    const worker=new Worker(path.join(__dirname,'headless-pnr-worker.cjs'),{workerData:{
      engineDir,frequencyMHz,extraArguments,wasm:path.join(engineDir,'nextpnr-xilinx.wasm'),
