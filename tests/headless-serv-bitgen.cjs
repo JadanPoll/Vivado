@@ -25,15 +25,16 @@ if(error||!output?.frames)throw Error('FASM2Frames failed: '+(error||'no frames 
 console.log('FASM2FRAMES '+output.telemetry);
 fs.writeFileSync(path.join(dir,'design.frames'),output.frames);
 const unmapped=Number(/Unmapped (\d+)/.exec(output.telemetry)?.[1]||0);
-if(unmapped!==0){
- console.log('UNMAPPED_FEATURES '+unmapped+' - bitstream assembly withheld pending map coverage review');
+const audit=JSON.parse(fs.readFileSync(path.join(dir,'fasm-coverage-audit.json'),'utf8'));
+const c=audit.classes;
+const understood=(c.zero_only||0)+(c.pseudo_always||0)+(c.pseudo_default||0)+(c.pseudo_hint||0);
+if(c.unknown||c.noTile||c.noType||unmapped!==understood||audit.total_missing!==unmapped){
+ console.error('FASM_CONFIG_BITS_UNKNOWN '+JSON.stringify({unmapped,understood,c}));
  process.exitCode=2;
- returnEarly();
 } else {
- console.log('FASM feature mapping reported zero missing entries');
+ console.log('FASM_NO_BIT_FEATURES_VERIFIED '+JSON.stringify({unmapped,classes:c,db:audit.source_revision}));
  runFrames();
 }
-function returnEarly(){}
 function runFrames(){
  const wasm=zlib.brotliDecompressSync(fs.readFileSync(path.join(base,'xc7frames2bit.opt.wasm.br')));
  const yaml=fs.readFileSync(path.join(base,'part.yaml'),'utf8');
