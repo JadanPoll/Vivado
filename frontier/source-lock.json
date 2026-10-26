@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "target": "xc7s50csga324-1",
+  "nextpnrXilinx": {
+    "repository": "https://github.com/JadanPoll/nextpnr-xilinx.git",
+    "branch": "zerolabs-mmcm-fixes",
+    "commit": "a498371f7c4b0f98f8068780c25794386df073d0",
+    "submodules": {
+      "xilinx/external/nextpnr-xilinx-meta": "770ee6bc43a1a10eb286b95fd11435ad87eb73f1",
+      "xilinx/external/prjxray-db": "0a0addedd73e7e4139d52a6d8db4258763e0f1f3"
+    },
+    "metadataReconstruction": {
+      "reason": "The historical 770ee6b gitlink is not published by the recorded upstream",
+      "baseRepository": "https://github.com/openXC7/nextpnr-xilinx-meta.git",
+      "baseCommit": "491aefcc15be159efc8ad8bff2a1a4b93fe487fe",
+      "spartan7Base": "artix7",
+      "xadcOverlay": "xilinx/site_type_XADC_meta.json"
+    }
+  },
+  "browserAssets": {
+    "repository": "https://github.com/JadanPoll/Vivado.git",
+    "fasmMapV7Commit": "75a13debd0c9c90c6b3cbff44f1a0d867ab4fc4f",
+    "historicalBuildRecipeCommit": "ee5953f384bcee3a03c0b775dcdc4e0ad1d5afe0",
+    "fasmMapV7": {
+      "generator": "frontier/generate-fasm-map-v7.py",
+      "prjxrayDb": "0a0addedd73e7e4139d52a6d8db4258763e0f1f3",
+      "xadcOverlay": "nextpnr-xilinx@a498371f7c4b0f98f8068780c25794386df073d0:xilinx/segbits_monitor_bot.db",
+      "rawBytes": 6519687,
+      "rawSha256": "353012d0e587eb19f5fbd339991708fc7fa851cfb01a903a037915266598fca7"
+    }
+  },
+  "prjxray": {
+    "repository": "https://github.com/f4pga/prjxray.git",
+    "commit": "c9f02d8576042325425824647ab5555b1bc77833"
+  },
+  "hostTools": {
+    "node": "22.23.4",
+    "yowaspYosys": "0.70.1258",
+    "boost": "1.83.0",
+    "emsdk": {
+      "version": "5.0.6",
+      "tagCommit": "948c31acd3f369a5da276e33ab2ed57108c165e5",
+      "releasesCommit": "1724b50443d92e23ef2a56abf0dc501206839cef",
+      "emscriptenCommit": "6ea9c28c38cdd40c1032fa04400c9d16230ee180",
+      "llvmCommit": "bbeae6932d653b8a71a3a985af0ccf97e13e2e08",
+      "binaryenCommit": "54f9f7afa703ade4a34aa3291abbe237bb0cd8a4",
+      "wasmOptVersion": 129
+    }
+  },
+  "unresolvedSourceRebuildPins": []
+}
