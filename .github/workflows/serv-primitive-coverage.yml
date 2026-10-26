@@ -10,6 +10,8 @@ on:
       - 'PRODUCTION_GRADE/DEFAULTS/13_srlc32e/**'
       - 'PRODUCTION_GRADE/DEFAULTS/14_muxf78/**'
       - 'tests/serv-primitive-fingerprint.py'
+      - 'tests/headless-serv-fasm-audit.cjs'
+      - 'tests/headless-serv-bitgen.cjs'
 jobs:
   primitives:
     runs-on: ubuntu-latest
@@ -35,6 +37,10 @@ jobs:
         run: node tests/headless-pnr-matrix.cjs
       - name: Check primitive presence
         run: python3 tests/serv-primitive-fingerprint.py
+      - name: Audit every feature requiring configuration bits
+        run: node tests/headless-serv-fasm-audit.cjs
+      - name: Assemble isolated-primitive bitstream using production converter
+        run: node tests/headless-serv-bitgen.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

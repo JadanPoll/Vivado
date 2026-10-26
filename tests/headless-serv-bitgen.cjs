@@ -8,7 +8,7 @@ const vm=require('node:vm');
 const zlib=require('node:zlib');
 const root=path.resolve(__dirname,'..');
 const base=path.join(root,'PRODUCTION_GRADE');
-const dir=path.join(root,'pnr-repro-output/DEFAULTS_serv_blinky');
+const dir=path.join(root,'pnr-repro-output','DEFAULTS_'+(process.env.PNR_ONLY||'serv_blinky'));
 const fasm=fs.readFileSync(path.join(dir,'original.fasm'),'utf8');
 const map=JSON.parse(zlib.brotliDecompressSync(fs.readFileSync(path.join(base,'xc7s50_fasm_map_v7.json.br'))).toString('utf8'));
 let output=null,error=null;
@@ -55,7 +55,7 @@ function runFrames(){
  result.then(msg=>{
    const arr=Buffer.from(msg.bitstream);
    if(arr.length<100000)throw Error('Bitstream implausibly short: '+arr.length);
-   const bitName=(process.env.PNR_TOP==='top_probe')?'serv_probe.bit':'serv_blinky.bit';
+   const bitName=process.env.PNR_ONLY?(process.env.PNR_ONLY+'.bit'):((process.env.PNR_TOP==='top_probe')?'serv_probe.bit':'serv_blinky.bit');
    const bitPath=path.join(dir,bitName);
    fs.writeFileSync(bitPath,arr);
    console.log('BITSTREAM '+JSON.stringify({bytes:arr.length,path:bitPath}));
