@@ -41,14 +41,15 @@
   ],
   "specimen_root": "gold/hdmi-serializer/output",
   "evidence_archive": "gold/hdmi-serializer/xc7s50-hdmi-serializer-gold-20261026.zip",
+  "snapshot_provenance": "Normalized from Vivado 2025.2 Build 6299465 reports on 2026-10-26. Live files are preferred, then the evidence archive, then these compact observations.",
   "specimens": {
-    "oserdes8_bufr1": {"params": {"CORPUS": "seed", "DATA_WIDTH": 8, "BUFR_DIVIDE": 1, "DATA_RATE_TQ": "DDR"}},
-    "oserdes8_bufr2": {"params": {"CORPUS": "seed", "DATA_WIDTH": 8, "BUFR_DIVIDE": 2, "DATA_RATE_TQ": "DDR"}},
-    "oserdes8_bufr4": {"params": {"CORPUS": "seed", "DATA_WIDTH": 8, "BUFR_DIVIDE": 4, "DATA_RATE_TQ": "DDR"}},
-    "oserdes10_bufr1": {"params": {"CORPUS": "seed", "DATA_WIDTH": 10, "BUFR_DIVIDE": 1, "DATA_RATE_TQ": "DDR"}},
-    "oserdes10_bufr2": {"params": {"CORPUS": "seed", "DATA_WIDTH": 10, "BUFR_DIVIDE": 2, "DATA_RATE_TQ": "DDR"}},
-    "oserdes10_bufr4": {"params": {"CORPUS": "seed", "DATA_WIDTH": 10, "BUFR_DIVIDE": 4, "DATA_RATE_TQ": "DDR"}},
-    "oserdes10_bufr1_tqbuf": {"params": {"CORPUS": "experiment", "DATA_WIDTH": 10, "BUFR_DIVIDE": 1, "DATA_RATE_TQ": "BUF"}}
+    "oserdes8_bufr1": {"params": {"CORPUS": "seed", "DATA_WIDTH": 8, "BUFR_DIVIDE": 1, "DATA_RATE_TQ": "DDR"}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt"], "cell_ref_counts": {"BUFIO": 1, "BUFR": 1, "OSERDESE2": 1, "OBUFDS": 1}, "drc_markers": ["AVAL-70", "OSERDES_DataRateTqTriWidth"]}},
+    "oserdes8_bufr2": {"params": {"CORPUS": "seed", "DATA_WIDTH": 8, "BUFR_DIVIDE": 2, "DATA_RATE_TQ": "DDR"}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt"], "cell_ref_counts": {"BUFIO": 1, "BUFR": 1, "OSERDESE2": 1, "OBUFDS": 1}, "drc_markers": ["AVAL-70", "OSERDES_DataRateTqTriWidth"]}},
+    "oserdes8_bufr4": {"params": {"CORPUS": "seed", "DATA_WIDTH": 8, "BUFR_DIVIDE": 4, "DATA_RATE_TQ": "DDR"}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt"], "cell_ref_counts": {"BUFIO": 1, "BUFR": 1, "OSERDESE2": 1, "OBUFDS": 1}, "drc_markers": ["AVAL-70", "OSERDES_DataRateTqTriWidth"]}},
+    "oserdes10_bufr1": {"params": {"CORPUS": "seed", "DATA_WIDTH": 10, "BUFR_DIVIDE": 1, "DATA_RATE_TQ": "DDR"}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt"], "cell_ref_counts": {"BUFIO": 1, "BUFR": 1, "OSERDESE2": 2, "OBUFDS": 1}, "drc_markers": ["AVAL-70", "OSERDES_DataRateTqTriWidth"]}},
+    "oserdes10_bufr2": {"params": {"CORPUS": "seed", "DATA_WIDTH": 10, "BUFR_DIVIDE": 2, "DATA_RATE_TQ": "DDR"}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt"], "cell_ref_counts": {"BUFIO": 1, "BUFR": 1, "OSERDESE2": 2, "OBUFDS": 1}, "drc_markers": ["AVAL-70", "OSERDES_DataRateTqTriWidth"]}},
+    "oserdes10_bufr4": {"params": {"CORPUS": "seed", "DATA_WIDTH": 10, "BUFR_DIVIDE": 4, "DATA_RATE_TQ": "DDR"}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt"], "cell_ref_counts": {"BUFIO": 1, "BUFR": 1, "OSERDESE2": 2, "OBUFDS": 1}, "drc_markers": ["AVAL-70", "OSERDES_DataRateTqTriWidth"]}},
+    "oserdes10_bufr1_tqbuf": {"params": {"CORPUS": "experiment", "DATA_WIDTH": 10, "BUFR_DIVIDE": 1, "DATA_RATE_TQ": "BUF"}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt"], "cell_ref_counts": {"BUFIO": 1, "BUFR": 1, "OSERDESE2": 2, "OBUFDS": 1}, "drc_markers": []}}
   },
   "claims": [
     {
