@@ -58,6 +58,24 @@ jobs:
           PNR_RESULT_DIR="$result" node tests/headless-serv-bitgen.cjs
           test -s "$result/SRL16E.bit"
 
+      - name: Run the integrated HDMI clock and serializer oracle
+        env:
+          FPGA_TOOLCHAIN_ROOT: ${{ runner.temp }}/frontier-toolchain
+        run: |
+          output="$RUNNER_TEMP/frontier-hdmi"
+          node tests/headless-pnr-matrix.cjs \
+            --assets="$RUNNER_TEMP/Frontier_Grade" \
+            --case=gold/hdmi-serializer \
+            --output="$output" \
+            '--parameters={"DATA_WIDTH":10,"BUFR_DIVIDE":5,"DATA_RATE_TQ":"BUF","USE_HDMI_MMCM":1}'
+          result="$output/gold_hdmi-serializer"
+          test -f "$result/original.fasm"
+          FPGA_ASSET_DIR="$RUNNER_TEMP/Frontier_Grade" PNR_RESULT_DIR="$result" \
+            node tests/headless-serv-fasm-audit.cjs
+          FPGA_ASSET_DIR="$RUNNER_TEMP/Frontier_Grade" PNR_RESULT_DIR="$result" PNR_ONLY=HDMI \
+            node tests/headless-serv-bitgen.cjs
+          test -s "$result/HDMI.bit"
+
       - name: Upload the promoted runtime
         uses: actions/upload-artifact@v4
         with:

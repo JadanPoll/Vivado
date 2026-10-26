@@ -4,7 +4,7 @@
   "nextpnrXilinx": {
     "repository": "https://github.com/JadanPoll/nextpnr-xilinx.git",
     "branch": "zerolabs-mmcm-fixes",
-    "commit": "a498371f7c4b0f98f8068780c25794386df073d0",
+    "commit": "d845b41df019addb1031b13fa61c59869a8cc157",
     "submodules": {
       "xilinx/external/nextpnr-xilinx-meta": "770ee6bc43a1a10eb286b95fd11435ad87eb73f1",
       "xilinx/external/prjxray-db": "0a0addedd73e7e4139d52a6d8db4258763e0f1f3"
@@ -24,7 +24,7 @@
     "fasmMapV7": {
       "generator": "frontier/generate-fasm-map-v7.py",
       "prjxrayDb": "0a0addedd73e7e4139d52a6d8db4258763e0f1f3",
-      "xadcOverlay": "nextpnr-xilinx@a498371f7c4b0f98f8068780c25794386df073d0:xilinx/segbits_monitor_bot.db",
+      "xadcOverlay": "nextpnr-xilinx@d845b41df019addb1031b13fa61c59869a8cc157:xilinx/segbits_monitor_bot.db",
       "rawBytes": 6519687,
       "rawSha256": "353012d0e587eb19f5fbd339991708fc7fa851cfb01a903a037915266598fca7"
     }
