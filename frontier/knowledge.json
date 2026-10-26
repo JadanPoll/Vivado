@@ -49,7 +49,8 @@
     "oserdes10_bufr1": {"params": {"CORPUS": "seed", "DATA_WIDTH": 10, "BUFR_DIVIDE": 1, "DATA_RATE_TQ": "DDR"}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt"], "cell_ref_counts": {"BUFIO": 1, "BUFR": 1, "OSERDESE2": 2, "OBUFDS": 1}, "drc_markers": ["AVAL-70", "OSERDES_DataRateTqTriWidth"]}},
     "oserdes10_bufr2": {"params": {"CORPUS": "seed", "DATA_WIDTH": 10, "BUFR_DIVIDE": 2, "DATA_RATE_TQ": "DDR"}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt"], "cell_ref_counts": {"BUFIO": 1, "BUFR": 1, "OSERDESE2": 2, "OBUFDS": 1}, "drc_markers": ["AVAL-70", "OSERDES_DataRateTqTriWidth"]}},
     "oserdes10_bufr4": {"params": {"CORPUS": "seed", "DATA_WIDTH": 10, "BUFR_DIVIDE": 4, "DATA_RATE_TQ": "DDR"}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt"], "cell_ref_counts": {"BUFIO": 1, "BUFR": 1, "OSERDESE2": 2, "OBUFDS": 1}, "drc_markers": ["AVAL-70", "OSERDES_DataRateTqTriWidth"]}},
-    "oserdes10_bufr1_tqbuf": {"params": {"CORPUS": "experiment", "DATA_WIDTH": 10, "BUFR_DIVIDE": 1, "DATA_RATE_TQ": "BUF"}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt"], "cell_ref_counts": {"BUFIO": 1, "BUFR": 1, "OSERDESE2": 2, "OBUFDS": 1}, "drc_markers": []}}
+    "oserdes10_bufr1_tqbuf": {"params": {"CORPUS": "experiment", "DATA_WIDTH": 10, "BUFR_DIVIDE": 1, "DATA_RATE_TQ": "BUF"}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt"], "cell_ref_counts": {"BUFIO": 1, "BUFR": 1, "OSERDESE2": 2, "OBUFDS": 1}, "drc_markers": []}},
+    "hdmi_100m_125m_25m": {"params": {"CORPUS": "experiment", "DATA_WIDTH": 10, "BUFR_DIVIDE": 5, "DATA_RATE_TQ": "BUF", "USE_HDMI_MMCM": 1}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt", "route-status.txt", "timing.txt", "mmcm-properties.txt"], "cell_ref_counts": {"MMCME2_ADV": 1, "BUFIO": 1, "BUFR": 1, "OSERDESE2": 2, "OBUFDS": 1}, "drc_markers": []}}
   },
   "claims": [
     {
@@ -106,12 +107,30 @@
       "limitations": ["This isolates the warning and topology, not every emitted configuration bit.", "A later nextpnr comparison must still test functional and FASM equivalence."],
       "stop_when": "The paired outcome is classified once; no full matrix is required to choose the clean unused-tristate convention.",
       "reopen_when": "The design begins using tristate serialization or a target requires DATA_RATE_TQ=DDR."
+    },
+    {
+      "id": "HDMI.CLOCK_SERIALIZER_CHAIN.ROUTES",
+      "question": "Can the actual 100 MHz input to 125 MHz serializer and 25 MHz word-clock path coexist with the width-10 TMDS output chain on XC7S50?",
+      "statement": "One integrated Vivado witness routes MMCME2_ADV (100 MHz x10 /8), BUFIO, BUFR divide-by-5, width-10 MASTER/SLAVE OSERDESE2, and TMDS_33 OBUFDS; it emits a bitstream with zero routing errors and meets declared timing.",
+      "scope": "xc7s50csga324-1; Vivado 2025.2; input pin N15; TMDS pair U17/U18; 125 MHz fast clock and 25 MHz word clock.",
+      "checks": [
+        {"kind": "summary_pass", "where": {"USE_HDMI_MMCM": 1}},
+        {"kind": "artifacts_exist", "where": {"USE_HDMI_MMCM": 1}, "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt", "route-status.txt", "timing.txt", "mmcm-properties.txt"]},
+        {"kind": "cell_refs_present", "where": {"USE_HDMI_MMCM": 1}, "refs": ["MMCME2_ADV", "BUFIO", "BUFR", "OSERDESE2", "OBUFDS"]},
+        {"kind": "cell_ref_count", "where": {"USE_HDMI_MMCM": 1}, "ref": "OSERDESE2", "equals": 2},
+        {"kind": "file_regex_present", "where": {"USE_HDMI_MMCM": 1}, "file": "route-status.txt", "regex": "# of nets with routing errors\\.+'?\\s*:\\s*0"},
+        {"kind": "file_regex_present", "where": {"USE_HDMI_MMCM": 1}, "file": "timing.txt", "regex": "All user specified timing constraints are met"},
+        {"kind": "file_regex_absent", "where": {"USE_HDMI_MMCM": 1}, "file": "drc.txt", "regex": "AVAL-70|OSERDES_DataRateTqTriWidth"}
+      ],
+      "limitations": ["Vivado routability is not proof that nextpnr emits equivalent configuration features.", "This is one intentionally useful HDMI-rate point, not MMCM parameter-domain coverage or proof of monitor-level video."],
+      "stop_when": "The integrated Vivado witness routes, emits its retained evidence bundle, and passes the declared checks.",
+      "reopen_when": "The board pins, video mode, clock ratios, Vivado version, or primitive topology changes."
     }
   ],
   "experiments": [
     {
       "id": "EXP.OSERDES.TQ_BUF_VS_DDR",
-      "state": "READY",
+      "state": "COMPLETE",
       "priority": 100,
       "parent_goal": "G2_HDMI",
       "resolves": ["HDMI.OSERDES.TRISTATE_CONFIGURATION_CLEAN"],
@@ -126,6 +145,20 @@
         "implementation_fails_or_topology_changes": "Preserve DDR corpus as qualified evidence and investigate the exact changed cell properties; do not expand the matrix."
       },
       "stop_after": "Stop after the paired result is classified; do not launch a full Cartesian sweep."
+    },
+    {
+      "id": "EXP.HDMI.INTEGRATED_CLOCK_CHAIN",
+      "state": "COMPLETE",
+      "priority": 100,
+      "parent_goal": "G2_HDMI",
+      "resolves": ["HDMI.CLOCK_SERIALIZER_CHAIN.ROUTES"],
+      "completion_claim": "HDMI.CLOCK_SERIALIZER_CHAIN.ROUTES",
+      "change": "Insert one MMCME2_ADV witness between the 100 MHz board input and the existing clean serializer: 125 MHz fast clock, BUFR divide-by-5, width-10 DDR output.",
+      "control": "Existing warning-free oserdes10_bufr1_tqbuf specimen establishes the serializer/output portion independently.",
+      "cost": "One Vivado implementation and 2.4 MB retained evidence.",
+      "expected_information": "Tests the highest-impact unobserved HDMI boundary: legal coexistence and routing of MMCM, regional I/O clocks, serializer cascade, and TMDS output.",
+      "outcomes": {"routes_cleanly": "Stop Vivado expansion and compare this witness against nextpnr FASM/features.", "clock_placement_fails": "Use the exact placement conflict to choose a pin/site constraint experiment.", "configuration_or_drc_fails": "Isolate only the reported MMCM or clocking parameter; do not sweep unrelated serializer parameters."},
+      "stop_after": "Stop after the integrated witness is classified; a broad MMCM Cartesian sweep has lower expected value than nextpnr equivalence."
     }
   ]
 }

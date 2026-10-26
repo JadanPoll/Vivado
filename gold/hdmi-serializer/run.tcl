@@ -14,6 +14,10 @@ if {$experiment eq "tq_buf"} {
     # width-10/divide-1 DDR specimen is the control; do not rerun the matrix.
     lappend cases [list 10 1 BUF oserdes10_bufr1_tqbuf]
     set summary_name summary-tqbuf.tsv
+} elseif {$experiment eq "hdmi_clock"} {
+    # Single integrated witness, deliberately not a Cartesian sweep.
+    lappend cases [list 10 5 BUF hdmi_100m_125m_25m]
+    set summary_name summary-hdmi-clock.tsv
 } elseif {$experiment eq "seed"} {
     foreach width {8 10} {
         foreach divide {1 2 4} {
@@ -22,7 +26,7 @@ if {$experiment eq "tq_buf"} {
     }
     set summary_name summary.tsv
 } else {
-    error "Unknown FRONTIER_EXPERIMENT=$experiment (expected seed or tq_buf)"
+    error "Unknown FRONTIER_EXPERIMENT=$experiment (expected seed, tq_buf, or hdmi_clock)"
 }
 
 set summary [open [file join $out_root $summary_name] w]
@@ -40,7 +44,8 @@ foreach case $cases {
             read_xdc [file join $script_dir top.xdc]
             synth_design -top top -part xc7s50csga324-1 \
                 -generic DATA_WIDTH=$width -generic BUFR_DIVIDE=$divide \
-                -generic DATA_RATE_TQ=$tq_rate
+                -generic DATA_RATE_TQ=$tq_rate \
+                -generic USE_HDMI_MMCM=[expr {$experiment eq "hdmi_clock" ? 1 : 0}]
             opt_design
             place_design
             route_design
@@ -49,6 +54,10 @@ foreach case $cases {
             report_route_status -file [file join $out route-status.txt]
             report_timing_summary -file [file join $out timing.txt]
             report_drc -file [file join $out drc.txt]
+            if {$experiment eq "hdmi_clock"} {
+                report_property [get_cells -hierarchical -filter {REF_NAME == MMCME2_ADV}] \
+                    -file [file join $out mmcm-properties.txt]
+            }
             set fh [open [file join $out cells.tsv] w]
             puts $fh "cell\tref\tloc\tbel"
             foreach c [get_cells -hierarchical] {
