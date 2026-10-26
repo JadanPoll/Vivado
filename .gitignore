@@ -7,3 +7,6 @@ gold/hdmi-serializer/.Xil/
 gold/hdmi-serializer/clockInfo.txt
 gold/hdmi-serializer/dfx_runtime.txt
 gold/hdmi-serializer/*.zip
+!gold/hdmi-serializer/xc7s50-hdmi-serializer-gold-20261026.zip
+gold/hdmi-serializer/vivado.jou
+gold/hdmi-serializer/vivado.log
