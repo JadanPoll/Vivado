@@ -1,0 +1,42 @@
+name: SERV Primitive Coverage
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/serv-primitive-coverage.yml'
+      - 'PRODUCTION_GRADE/DEFAULTS/11_ramb36/**'
+      - 'PRODUCTION_GRADE/DEFAULTS/12_ram64m/**'
+      - 'PRODUCTION_GRADE/DEFAULTS/13_srlc32e/**'
+      - 'PRODUCTION_GRADE/DEFAULTS/14_muxf78/**'
+      - 'tests/serv-primitive-fingerprint.py'
+jobs:
+  primitives:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        primitive: [11_ramb36,12_ram64m,13_srlc32e,14_muxf78]
+    env:
+      PNR_ONLY: ${{ matrix.primitive }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned Yosys
+        run: python3 -m pip install --break-system-packages yowasp-yosys==0.65.0.0.post1154 brotli
+      - name: Prepare FPGA database
+        run: |
+          mkdir -p pnr-repro-output
+          python3 -c "import brotli,pathlib; p=pathlib.Path('PRODUCTION_GRADE/xc7s50.bin.br');pathlib.Path('pnr-repro-output/chipdb.bin').write_bytes(brotli.decompress(p.read_bytes()))"
+      - name: Synthesize and route single primitive default
+        run: node tests/headless-pnr-matrix.cjs
+      - name: Check primitive presence
+        run: python3 tests/serv-primitive-fingerprint.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: primitive-${{ matrix.primitive }}
+          path: pnr-repro-output/DEFAULTS_${{ matrix.primitive }}/
