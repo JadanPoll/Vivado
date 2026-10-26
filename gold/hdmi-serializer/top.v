@@ -1,6 +1,7 @@
 module top #(
     parameter integer DATA_WIDTH = 8,
-    parameter integer BUFR_DIVIDE = 1
+    parameter integer BUFR_DIVIDE = 1,
+    parameter DATA_RATE_TQ = "DDR"
 ) (
     input  wire clk,
     output wire hdmi_p,
@@ -20,7 +21,7 @@ module top #(
         pattern <= {pattern[8:0], pattern[9] ^ pattern[6]};
 
     OSERDESE2 #(
-        .DATA_RATE_OQ("DDR"), .DATA_RATE_TQ("DDR"),
+        .DATA_RATE_OQ("DDR"), .DATA_RATE_TQ(DATA_RATE_TQ),
         .DATA_WIDTH(DATA_WIDTH), .SERDES_MODE("MASTER"),
         .TRISTATE_WIDTH(1)
     ) u_master (
@@ -36,7 +37,7 @@ module top #(
 
     generate if (DATA_WIDTH == 10) begin : g_slave
         OSERDESE2 #(
-            .DATA_RATE_OQ("DDR"), .DATA_RATE_TQ("DDR"),
+            .DATA_RATE_OQ("DDR"), .DATA_RATE_TQ(DATA_RATE_TQ),
             .DATA_WIDTH(10), .SERDES_MODE("SLAVE"), .TRISTATE_WIDTH(1)
         ) u_slave (
             .CLK(clk_io), .CLKDIV(clk_div),
@@ -52,3 +53,4 @@ module top #(
     OBUFDS #(.IOSTANDARD("TMDS_33"), .SLEW("FAST"))
         u_out (.I(serial), .O(hdmi_p), .OB(hdmi_n));
 endmodule
+

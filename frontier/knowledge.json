@@ -1,0 +1,132 @@
+{
+  "schema": 1,
+  "mission": "Produce an evidence-backed XC7S50 toolchain that can select, run, and stop reverse-engineering experiments while remaining understandable and steerable by a human.",
+  "human_interface": {
+    "entrypoint": "python frontier/investigate.py",
+    "promise": "One command reports what is known, what is not known, why work stopped, and the single highest-value next experiment.",
+    "details": "python frontier/investigate.py explain CLAIM_ID",
+    "machine_view": "python frontier/investigate.py status --json"
+  },
+  "goals": [
+    {
+      "id": "G1_FRONTIER",
+      "kind": "stated",
+      "goal": "Build and preserve a portable XC7S50 Frontier Grade flow from HDL through bitstream."
+    },
+    {
+      "id": "G2_HDMI",
+      "kind": "instrumental",
+      "goal": "Make the clocking and serializer primitives needed by a real HDMI path faithful in nextpnr-xilinx."
+    },
+    {
+      "id": "G3_AUTONOMY",
+      "kind": "unstated-big-picture",
+      "goal": "Turn scarce Vivado runtime into an autonomous experiment loop that selects information-rich work instead of accumulating undirected artifacts."
+    },
+    {
+      "id": "G4_CONTINUITY",
+      "kind": "holistic",
+      "goal": "Preserve enough evidence, intent, and reopening conditions that work survives machine, model, and human-memory changes."
+    },
+    {
+      "id": "G5_SYMBIOSIS",
+      "kind": "holistic",
+      "goal": "Let humans steer by intentions and consequences while machines inspect exact artifacts and execute repetitive verification; neither interface may discard the other."
+    },
+    {
+      "id": "G6_ECONOMY",
+      "kind": "constraint",
+      "goal": "Fit one machine and limited storage/attention by keeping only artifacts and experiments with consequential information value."
+    }
+  ],
+  "specimen_root": "gold/hdmi-serializer/output",
+  "evidence_archive": "gold/hdmi-serializer/xc7s50-hdmi-serializer-gold-20261026.zip",
+  "snapshot_provenance": "Normalized from Vivado 2025.2 Build 6299465 reports on 2026-10-26. Live files are preferred, then the evidence archive, then these compact observations.",
+  "specimens": {
+    "oserdes8_bufr1": {"params": {"CORPUS": "seed", "DATA_WIDTH": 8, "BUFR_DIVIDE": 1, "DATA_RATE_TQ": "DDR"}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt"], "cell_ref_counts": {"BUFIO": 1, "BUFR": 1, "OSERDESE2": 1, "OBUFDS": 1}, "drc_markers": ["AVAL-70", "OSERDES_DataRateTqTriWidth"]}},
+    "oserdes8_bufr2": {"params": {"CORPUS": "seed", "DATA_WIDTH": 8, "BUFR_DIVIDE": 2, "DATA_RATE_TQ": "DDR"}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt"], "cell_ref_counts": {"BUFIO": 1, "BUFR": 1, "OSERDESE2": 1, "OBUFDS": 1}, "drc_markers": ["AVAL-70", "OSERDES_DataRateTqTriWidth"]}},
+    "oserdes8_bufr4": {"params": {"CORPUS": "seed", "DATA_WIDTH": 8, "BUFR_DIVIDE": 4, "DATA_RATE_TQ": "DDR"}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt"], "cell_ref_counts": {"BUFIO": 1, "BUFR": 1, "OSERDESE2": 1, "OBUFDS": 1}, "drc_markers": ["AVAL-70", "OSERDES_DataRateTqTriWidth"]}},
+    "oserdes10_bufr1": {"params": {"CORPUS": "seed", "DATA_WIDTH": 10, "BUFR_DIVIDE": 1, "DATA_RATE_TQ": "DDR"}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt"], "cell_ref_counts": {"BUFIO": 1, "BUFR": 1, "OSERDESE2": 2, "OBUFDS": 1}, "drc_markers": ["AVAL-70", "OSERDES_DataRateTqTriWidth"]}},
+    "oserdes10_bufr2": {"params": {"CORPUS": "seed", "DATA_WIDTH": 10, "BUFR_DIVIDE": 2, "DATA_RATE_TQ": "DDR"}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt"], "cell_ref_counts": {"BUFIO": 1, "BUFR": 1, "OSERDESE2": 2, "OBUFDS": 1}, "drc_markers": ["AVAL-70", "OSERDES_DataRateTqTriWidth"]}},
+    "oserdes10_bufr4": {"params": {"CORPUS": "seed", "DATA_WIDTH": 10, "BUFR_DIVIDE": 4, "DATA_RATE_TQ": "DDR"}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt"], "cell_ref_counts": {"BUFIO": 1, "BUFR": 1, "OSERDESE2": 2, "OBUFDS": 1}, "drc_markers": ["AVAL-70", "OSERDES_DataRateTqTriWidth"]}},
+    "oserdes10_bufr1_tqbuf": {"params": {"CORPUS": "experiment", "DATA_WIDTH": 10, "BUFR_DIVIDE": 1, "DATA_RATE_TQ": "BUF"}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt"], "cell_ref_counts": {"BUFIO": 1, "BUFR": 1, "OSERDESE2": 2, "OBUFDS": 1}, "drc_markers": []}}
+  },
+  "claims": [
+    {
+      "id": "HDMI.OUTPUT_CHAIN.ROUTES",
+      "question": "Does the intended BUFIO, BUFR, OSERDESE2 and differential-output chain survive implementation for every seed specimen?",
+      "statement": "All six seed configurations route and retain BUFIO, BUFR, at least one OSERDESE2, and OBUFDS cells.",
+      "scope": "xc7s50csga324-1; Vivado 2025.2; widths 8/10; BUFR divides 1/2/4; fixed pins in gold/hdmi-serializer/top.xdc",
+      "checks": [
+        {"kind": "summary_pass", "where": {"CORPUS": "seed"}},
+        {"kind": "artifacts_exist", "where": {"CORPUS": "seed"}, "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt"]},
+        {"kind": "cell_refs_present", "where": {"CORPUS": "seed"}, "refs": ["BUFIO", "BUFR", "OSERDESE2", "OBUFDS"]}
+      ],
+      "limitations": ["Passing implementation does not establish clean DRC or nextpnr equivalence.", "The six cases are a targeted seed domain, not full primitive coverage."],
+      "stop_when": "The parent may use this chain as a routable Vivado reference for the stated domain.",
+      "reopen_when": "A retained artifact disappears, a case stops routing, pins/device/version change, or nextpnr requires a distinction outside this scope."
+    },
+    {
+      "id": "HDMI.OSERDES.WIDTH10_ADDS_SLAVE",
+      "question": "Does width 10, rather than BUFR division, distinguish the MASTER/SLAVE cascade topology?",
+      "statement": "Within the seed domain, DATA_WIDTH=10 has two placed OSERDESE2 cells while DATA_WIDTH=8 has one, independently repeated at BUFR divides 1, 2, and 4.",
+      "scope": "Same seed domain; this certifies observed implemented topology, not the complete legal OSERDESE2 domain.",
+      "checks": [
+        {"kind": "cell_ref_count", "where": {"CORPUS": "seed", "DATA_WIDTH": 10}, "ref": "OSERDESE2", "equals": 2},
+        {"kind": "cell_ref_count", "where": {"CORPUS": "seed", "DATA_WIDTH": 8}, "ref": "OSERDESE2", "equals": 1}
+      ],
+      "limitations": ["The RTL explicitly generates the slave at width 10; this demonstrates Vivado preserves and places the topology, not that Vivado inferred it.", "Width 14 and SDR configurations remain untested."],
+      "stop_when": "Both sides have repeated witnesses across the nuisance BUFR_DIVIDE variable.",
+      "reopen_when": "Testing inferred primitives, width 14, SDR, another OLOGIC site, or a different device family."
+    },
+    {
+      "id": "HDMI.OSERDES.TRISTATE_CONFIGURATION_CLEAN",
+      "question": "Is the seed serializer programming clean enough to serve as an unquestioned golden reference?",
+      "statement": "The implemented serializer cases have no AVAL-70 OSERDES tristate-programming warning.",
+      "scope": "The six current seed DRC reports.",
+      "checks": [
+        {"kind": "file_regex_absent", "where": {"CORPUS": "seed"}, "file": "drc.txt", "regex": "AVAL-70|OSERDES_DataRateTqTriWidth"}
+      ],
+      "limitations": ["A warning is not a routing failure, but retaining an unexplained warning would make later feature differences ambiguous."],
+      "stop_when": "A paired experiment identifies a warning-free configuration without changing the data serializer topology, or proves the warning unavoidable for the intended configuration.",
+      "reopen_when": "Vivado, primitive parameters, or tristate usage changes."
+    },
+    {
+      "id": "HDMI.OSERDES.TQBUF_REMOVES_AVAL70",
+      "question": "Does changing only the unused tristate serializer rate from DDR to BUF remove AVAL-70 while preserving the width-10 topology?",
+      "statement": "The existing DDR control contains AVAL-70; the paired TQ=BUF specimen routes with two OSERDESE2 cells and does not contain AVAL-70.",
+      "scope": "Paired width-10, BUFR-divide-1 specimens on xc7s50csga324-1 with all parameters and constraints except DATA_RATE_TQ held fixed.",
+      "checks": [
+        {"kind": "file_regex_present", "where": {"CORPUS": "seed", "DATA_WIDTH": 10, "BUFR_DIVIDE": 1}, "file": "drc.txt", "regex": "AVAL-70|OSERDES_DataRateTqTriWidth"},
+        {"kind": "summary_pass", "where": {"CORPUS": "experiment", "DATA_RATE_TQ": "BUF"}},
+        {"kind": "artifacts_exist", "where": {"CORPUS": "experiment", "DATA_RATE_TQ": "BUF"}, "files": ["golden.bit", "routed.dcp", "cells.tsv", "drc.txt"]},
+        {"kind": "cell_ref_count", "where": {"CORPUS": "experiment", "DATA_RATE_TQ": "BUF"}, "ref": "OSERDESE2", "equals": 2},
+        {"kind": "file_regex_absent", "where": {"CORPUS": "experiment", "DATA_RATE_TQ": "BUF"}, "file": "drc.txt", "regex": "AVAL-70|OSERDES_DataRateTqTriWidth"}
+      ],
+      "limitations": ["This isolates the warning and topology, not every emitted configuration bit.", "A later nextpnr comparison must still test functional and FASM equivalence."],
+      "stop_when": "The paired outcome is classified once; no full matrix is required to choose the clean unused-tristate convention.",
+      "reopen_when": "The design begins using tristate serialization or a target requires DATA_RATE_TQ=DDR."
+    }
+  ],
+  "experiments": [
+    {
+      "id": "EXP.OSERDES.TQ_BUF_VS_DDR",
+      "state": "READY",
+      "priority": 100,
+      "parent_goal": "G2_HDMI",
+      "resolves": ["HDMI.OSERDES.TRISTATE_CONFIGURATION_CLEAN"],
+      "completion_claim": "HDMI.OSERDES.TQBUF_REMOVES_AVAL70",
+      "change": "For one width-10/divide-1 specimen, change only DATA_RATE_TQ from DDR to BUF while retaining TRISTATE_WIDTH=1 and unused T outputs.",
+      "control": "Existing oserdes10_bufr1 specimen.",
+      "cost": "One Vivado implementation plus comparison against an existing control.",
+      "expected_information": "Distinguishes a parameter inconsistency from topology/routing problems and removes a known confound before expanding the corpus.",
+      "outcomes": {
+        "routes_without_AVAL_70": "Adopt BUF for unused tristate serialization and regenerate only specimens whose later claims depend on clean DRC.",
+        "AVAL_70_remains": "Reject the parameter-only explanation and inspect the emitted OSERDES properties before generating more combinations.",
+        "implementation_fails_or_topology_changes": "Preserve DDR corpus as qualified evidence and investigate the exact changed cell properties; do not expand the matrix."
+      },
+      "stop_after": "Stop after the paired result is classified; do not launch a full Cartesian sweep."
+    }
+  ]
+}
+

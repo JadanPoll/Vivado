@@ -1,12 +1,35 @@
 set script_dir [file dirname [file normalize [info script]]]
 set out_root [file join $script_dir output]
 file mkdir $out_root
-set summary [open [file join $out_root summary.tsv] w]
+
+set cases {}
+set experiment "seed"
+if {[llength $argv] > 0} {
+    set experiment [lindex $argv 0]
+} elseif {[info exists ::env(FRONTIER_EXPERIMENT)]} {
+    set experiment $::env(FRONTIER_EXPERIMENT)
+}
+if {$experiment eq "tq_buf"} {
+    # One-variable experiment selected by frontier/investigate.py. The existing
+    # width-10/divide-1 DDR specimen is the control; do not rerun the matrix.
+    lappend cases [list 10 1 BUF oserdes10_bufr1_tqbuf]
+    set summary_name summary-tqbuf.tsv
+} elseif {$experiment eq "seed"} {
+    foreach width {8 10} {
+        foreach divide {1 2 4} {
+            lappend cases [list $width $divide DDR "oserdes${width}_bufr${divide}"]
+        }
+    }
+    set summary_name summary.tsv
+} else {
+    error "Unknown FRONTIER_EXPERIMENT=$experiment (expected seed or tq_buf)"
+}
+
+set summary [open [file join $out_root $summary_name] w]
 puts $summary "case\tstatus\tdetail"
 
-foreach width {8 10} {
-    foreach divide {1 2 4} {
-        set name "oserdes${width}_bufr${divide}"
+foreach case $cases {
+        lassign $case width divide tq_rate name
         set out [file join $out_root $name]
         file mkdir $out
         set status PASS
@@ -16,7 +39,8 @@ foreach width {8 10} {
             read_verilog [file join $script_dir top.v]
             read_xdc [file join $script_dir top.xdc]
             synth_design -top top -part xc7s50csga324-1 \
-                -generic DATA_WIDTH=$width -generic BUFR_DIVIDE=$divide
+                -generic DATA_WIDTH=$width -generic BUFR_DIVIDE=$divide \
+                -generic DATA_RATE_TQ=$tq_rate
             opt_design
             place_design
             route_design
@@ -46,7 +70,7 @@ foreach width {8 10} {
         }
         puts $summary "$name\t$status\t$detail"
         flush $summary
-    }
 }
 close $summary
 exit
+
