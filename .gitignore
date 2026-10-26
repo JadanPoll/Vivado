@@ -6,3 +6,4 @@ gold/hdmi-serializer/output/
 gold/hdmi-serializer/.Xil/
 gold/hdmi-serializer/clockInfo.txt
 gold/hdmi-serializer/dfx_runtime.txt
+gold/hdmi-serializer/*.zip
