@@ -50,7 +50,10 @@
     "oserdes10_bufr2": {"params": {"CORPUS": "seed", "DATA_WIDTH": 10, "BUFR_DIVIDE": 2, "DATA_RATE_TQ": "DDR"}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt"], "cell_ref_counts": {"BUFIO": 1, "BUFR": 1, "OSERDESE2": 2, "OBUFDS": 1}, "drc_markers": ["AVAL-70", "OSERDES_DataRateTqTriWidth"]}},
     "oserdes10_bufr4": {"params": {"CORPUS": "seed", "DATA_WIDTH": 10, "BUFR_DIVIDE": 4, "DATA_RATE_TQ": "DDR"}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt"], "cell_ref_counts": {"BUFIO": 1, "BUFR": 1, "OSERDESE2": 2, "OBUFDS": 1}, "drc_markers": ["AVAL-70", "OSERDES_DataRateTqTriWidth"]}},
     "oserdes10_bufr1_tqbuf": {"params": {"CORPUS": "experiment", "DATA_WIDTH": 10, "BUFR_DIVIDE": 1, "DATA_RATE_TQ": "BUF"}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt"], "cell_ref_counts": {"BUFIO": 1, "BUFR": 1, "OSERDESE2": 2, "OBUFDS": 1}, "drc_markers": []}},
-    "hdmi_100m_125m_25m": {"params": {"CORPUS": "experiment", "DATA_WIDTH": 10, "BUFR_DIVIDE": 5, "DATA_RATE_TQ": "BUF", "USE_HDMI_MMCM": 1}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt", "route-status.txt", "timing.txt", "mmcm-properties.txt"], "cell_ref_counts": {"MMCME2_ADV": 1, "BUFIO": 1, "BUFR": 1, "OSERDESE2": 2, "OBUFDS": 1}, "drc_markers": []}}
+    "hdmi_100m_125m_25m": {"params": {"CORPUS": "experiment", "DATA_WIDTH": 10, "BUFR_DIVIDE": 5, "DATA_RATE_TQ": "BUF", "USE_HDMI_MMCM": 1}, "snapshot": {"status": "PASS", "files": ["golden.bit", "routed.dcp", "cells.tsv", "routed-pips.txt", "drc.txt", "route-status.txt", "timing.txt", "mmcm-properties.txt"], "cell_ref_counts": {"MMCME2_ADV": 1, "BUFIO": 1, "BUFR": 1, "OSERDESE2": 2, "OBUFDS": 1}, "drc_markers": []}},
+    "nextpnr_hdmi_control": {"params": {"CORPUS": "nextpnr-diagnostic", "INTERVENTION": "none"}, "snapshot": {"status": "FAIL", "files": ["original.pnr.log"]}},
+    "nextpnr_hdmi_no_tbyte": {"params": {"CORPUS": "nextpnr-diagnostic", "INTERVENTION": "disconnect-tbytein"}, "snapshot": {"status": "FAIL", "files": ["original.pnr.log"]}},
+    "nextpnr_hdmi_inactive_ports": {"params": {"CORPUS": "nextpnr-diagnostic", "INTERVENTION": "disconnect-inactive-oserdes"}, "snapshot": {"status": "PASS", "files": ["original.pnr.log", "original.fasm", "fasm-coverage-audit.json"]}}
   },
   "claims": [
     {
@@ -125,6 +128,33 @@
       "limitations": ["Vivado routability is not proof that nextpnr emits equivalent configuration features.", "This is one intentionally useful HDMI-rate point, not MMCM parameter-domain coverage or proof of monitor-level video."],
       "stop_when": "The integrated Vivado witness routes, emits its retained evidence bundle, and passes the declared checks.",
       "reopen_when": "The board pins, video mode, clock ratios, Vivado version, or primitive topology changes."
+    },
+    {
+      "id": "HDMI.NEXTPNR.OSERDES_INACTIVE_PORTS",
+      "question": "Which exact OSERDESE2 routing demands prevent the integrated width-10 HDMI witness from routing in nextpnr?",
+      "statement": "The baseline stops at TBYTEIN; consuming TBYTEIN exposes SLAVE SHIFTIN2; consuming TBYTEIN and both SLAVE SHIFTIN ports makes the identical synthesized design finish normally.",
+      "scope": "Pinned Frontier Grade XC7S50 WASM flow; integrated DATA_WIDTH=10, TQ=BUF, BUFR divide-by-5, MMCME2_ADV witness.",
+      "implementation": {"repository": "JadanPoll/nextpnr-xilinx", "pull_request": 1, "merged_commit": "64cea03d0424ee662a3c7d123382804c30995d22", "asset_state": "source-fixed; pinned WASM rebuild pending"},
+      "checks": [
+        {"kind": "file_regex_present", "where": {"INTERVENTION": "none"}, "file": "original.pnr.log", "regex": "Failed to route arc.*TBYTEIN"},
+        {"kind": "file_regex_present", "where": {"INTERVENTION": "disconnect-tbytein"}, "file": "original.pnr.log", "regex": "Failed to route arc.*SHIFTIN2"},
+        {"kind": "file_regex_present", "where": {"INTERVENTION": "disconnect-inactive-oserdes"}, "file": "original.pnr.log", "regex": "Program finished normally"}
+      ],
+      "limitations": ["The passing intervention certifies packer semantics but is not a rebuild of nextpnr containing the merged source change.", "It does not establish FASM-to-bitstream fidelity."],
+      "stop_when": "The causal sequence is preserved and the equivalent packer fix is merged.",
+      "reopen_when": "A rebuilt nextpnr still requests one of these inactive routes or a design enables TBYTE_CTL."
+    },
+    {
+      "id": "HDMI.NEXTPNR.FASM_FULLY_MAPPED",
+      "question": "Can the successfully routed width-10 HDMI FASM be converted without unknown configuration features?",
+      "statement": "The routed width-10 HDMI FASM contains no unknown features relative to the pinned XC7S50 map.",
+      "scope": "The passing diagnostic PNR result and pinned Frontier Grade FASM map.",
+      "checks": [
+        {"kind": "file_regex_absent", "where": {"INTERVENTION": "disconnect-inactive-oserdes"}, "file": "fasm-coverage-audit.json", "regex": "\"unknown\"\\s*:\\s*[1-9]"}
+      ],
+      "limitations": ["A zero unknown count would establish map coverage, not behavioral equivalence by itself."],
+      "stop_when": "All emitted features map and a generated bitstream can enter differential comparison.",
+      "reopen_when": "Emitter, database revision, primitive parameters, or OLOGIC placement changes."
     }
   ],
   "experiments": [
@@ -159,6 +189,19 @@
       "expected_information": "Tests the highest-impact unobserved HDMI boundary: legal coexistence and routing of MMCM, regional I/O clocks, serializer cascade, and TMDS output.",
       "outcomes": {"routes_cleanly": "Stop Vivado expansion and compare this witness against nextpnr FASM/features.", "clock_placement_fails": "Use the exact placement conflict to choose a pin/site constraint experiment.", "configuration_or_drc_fails": "Isolate only the reported MMCM or clocking parameter; do not sweep unrelated serializer parameters."},
       "stop_after": "Stop after the integrated witness is classified; a broad MMCM Cartesian sweep has lower expected value than nextpnr equivalence."
+    },
+    {
+      "id": "EXP.HDMI.DERIVE_WIDTH10_FASM",
+      "state": "READY",
+      "priority": 100,
+      "parent_goal": "G2_HDMI",
+      "resolves": ["HDMI.NEXTPNR.FASM_FULLY_MAPPED"],
+      "change": "Use the retained Vivado width-8 versus width-10 paired controls to derive only the three unknown OLOGIC features: two DDR.W10 encodings and the SLAVE DATA_RATE_OQ.BUF emission.",
+      "control": "oserdes8_bufr1 versus oserdes10_bufr1 holds BUFR division and serializer rate fixed; the passing nextpnr FASM identifies the exact unknown tokens.",
+      "cost": "One focused bit-feature differential and, if justified, one emitter/map patch; no new Vivado implementation matrix.",
+      "expected_information": "Distinguishes a missing database encoding from an incorrect SLAVE emitter feature and directly unlocks bitstream conversion.",
+      "outcomes": {"paired_bits_identify_w10": "Add the evidence-backed W10 map entries and retest the audit.", "buf_is_emitter_artifact": "Correct SLAVE DATA_RATE_OQ emission from primitive semantics and retest.", "difference_is_ambiguous": "Generate exactly one discriminating Vivado control chosen from the remaining candidate encodings."},
+      "stop_after": "Stop when the three unknowns are mapped or reduced to one ambiguity that names the single next Vivado experiment."
     }
   ]
 }

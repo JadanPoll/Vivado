@@ -8,14 +8,22 @@ const zlib=require('node:zlib');
 const crypto=require('node:crypto');
 const {performance}=require('node:perf_hooks');
 const root=path.resolve(__dirname,'..');
+const options=name=>{
+ const prefix=name+'=';
+ return process.argv.slice(2).filter(x=>x.startsWith(prefix)).map(x=>x.slice(prefix.length));
+};
+const option=name=>{
+ const values=options(name);
+ return values.length?values[0]:null;
+};
 const workspaceRoot=path.dirname(root);
 const defaultFpgaRoot=process.platform==='win32'?(fs.existsSync('C:\\Vivado')?'C:\\Vivado':'C:\\Xilinx_Vivado'):path.join(root,'.fpga');
 const fpgaRoot=path.resolve(process.env.FPGA_ROOT || defaultFpgaRoot);
 const persistentToolchain=path.join(workspaceRoot,'.frontier','toolchain');
 const toolchainRoot=path.resolve(process.env.FPGA_TOOLCHAIN_ROOT || (fs.existsSync(persistentToolchain)?persistentToolchain:path.join(fpgaRoot,'toolchain')));
-const engineDir=path.resolve(process.env.FPGA_ASSET_DIR || path.join(root,'PRODUCTION_GRADE'));
+const engineDir=path.resolve(option('--assets') || process.env.FPGA_ASSET_DIR || path.join(root,'PRODUCTION_GRADE'));
 const defaultOut=process.platform==='win32'?path.join(fpgaRoot,'work','pnr-repro-output'):path.join(root,'pnr-repro-output');
-const outDir=path.resolve(process.env.PNR_OUTPUT_DIR || defaultOut);
+const outDir=path.resolve(option('--output') || process.env.PNR_OUTPUT_DIR || defaultOut);
 fs.mkdirSync(outDir,{recursive:true});
 function materializeBrotli(name,outputStem){
  const compressed=fs.readFileSync(path.join(engineDir,name));
@@ -30,7 +38,8 @@ const fixtureCases=[
 ...fs.readdirSync(path.join(engineDir,'DEFAULTS'),{withFileTypes:true}).filter(x=>x.isDirectory()).map(x=>path.join(engineDir,'DEFAULTS',x.name)),
 ...fs.readdirSync(path.join(engineDir,'TESTS'),{withFileTypes:true}).filter(x=>x.isDirectory()).map(x=>path.join(engineDir,'TESTS',x.name)),
 ];
-const cases=(process.env.PNR_CASE_DIR?[path.resolve(process.env.PNR_CASE_DIR)]:fixtureCases)
+const selectedCase=option('--case') || process.env.PNR_CASE_DIR;
+const cases=(selectedCase?[path.resolve(selectedCase)]:fixtureCases)
  .filter(dir => !process.env.PNR_ONLY || path.basename(dir)===process.env.PNR_ONLY);
 if(cases.length===0)throw Error('No PNR cases selected');
 const casePath=dir=>path.isAbsolute(dir)?dir:path.join(root,dir);
@@ -42,7 +51,23 @@ async function synth(dir,slug){
  fs.writeFileSync(path.join(scratch,'source_0.v'),src);
  const topName=process.env.PNR_TOP || 'top';
  if(!/^[A-Za-z_][A-Za-z_0-9]*$/.test(topName))throw Error('Invalid PNR_TOP');
- const script=`read_verilog -sv source_0.v; hierarchy -top ${topName}; proc; opt; synth_xilinx -flatten -abc9 -arch xc7 -top ${topName}; write_json synth.json`;
+ let parameterCommand='';
+ const parametersJson=option('--parameters') || process.env.PNR_PARAMETERS_JSON;
+ if(parametersJson){
+   const parameters=JSON.parse(parametersJson);
+   if(!parameters || Array.isArray(parameters) || typeof parameters!=='object')throw Error('PNR_PARAMETERS_JSON must be an object');
+   const assignments=[];
+   for(const [name,value] of Object.entries(parameters)){
+     if(!/^[A-Za-z_][A-Za-z_0-9]*$/.test(name))throw Error('Invalid parameter name '+name);
+     if(!((typeof value==='number'&&Number.isFinite(value)) || (typeof value==='string'&&/^[A-Za-z_0-9.]+$/.test(value))))throw Error('Invalid parameter value for '+name);
+     const encoded=typeof value==='string'
+       ?`${value.length*8}'h${Buffer.from(value,'ascii').toString('hex')}`
+       :String(value);
+     assignments.push(`-set ${name} ${encoded}`);
+   }
+   parameterCommand=`chparam ${assignments.join(' ')} ${topName}; `;
+ }
+ const script=`read_verilog -sv source_0.v; ${parameterCommand}hierarchy -top ${topName}; proc; opt; synth_xilinx -flatten -abc9 -arch xc7 -top ${topName}; write_json synth.json`;
  let r,synthJson;
  try {
    const yosysEntry=require.resolve('@yowasp/yosys',{paths:[toolchainRoot,root]});
@@ -64,7 +89,24 @@ async function synth(dir,slug){
  if(fs.existsSync(path.join(scratch,'synth.json'))){
    const json=JSON.parse(fs.readFileSync(path.join(scratch,'synth.json'),'utf8'));
    const top=json.modules?.[topName];
-   if(top){ const totals={};for(const cell of Object.values(top.cells||{})) totals[cell.type]=(totals[cell.type]||0)+1;
+   if(top){
+     for(const disconnect of options('--disconnect')){
+       const byType=/^([A-Za-z_][A-Za-z_0-9]*)\.([A-Za-z_][A-Za-z_0-9]*)$/.exec(disconnect);
+       const byCell=/^@(.+)\.([A-Za-z_][A-Za-z_0-9]*)$/.exec(disconnect);
+       if(!byType&&!byCell)throw Error('Invalid --disconnect=TYPE.PORT or @CELL.PORT');
+       let changed=0;
+       for(const [cellName,cell] of Object.entries(top.cells||{})){
+         const selected=byType?cell.type===byType[1]:cellName===byCell[1];
+         const port=(byType||byCell)[2];
+         if(selected && Object.hasOwn(cell.connections||{},port)){
+           delete cell.connections[port]; changed++;
+         }
+       }
+       if(changed===0)throw Error('Diagnostic disconnect matched no ports: '+disconnect);
+       fs.writeFileSync(path.join(scratch,'synth.json'),JSON.stringify(json));
+       console.log('SYNTH_DIAGNOSTIC_DISCONNECT '+JSON.stringify({target:disconnect,cells:changed}));
+     }
+     const totals={};for(const cell of Object.values(top.cells||{})) totals[cell.type]=(totals[cell.type]||0)+1;
      const summary={design:dir,flipflops:Object.entries(totals).filter(([t])=>/^FD/.test(t)).reduce((n,[,v])=>n+v,0),
        bram:Object.entries(totals).filter(([t])=>/^RAMB/.test(t)).reduce((n,[,v])=>n+v,0),
        luts:Object.entries(totals).filter(([t])=>/^LUT/.test(t)).reduce((n,[,v])=>n+v,0),cells:Object.values(totals).reduce((a,b)=>a+b,0)};
@@ -112,7 +154,7 @@ function runPnr(dir,slug,variant='original',xdcText=null,frequencyMHz=null,extra
    catch(e){summary.push({design:dir,result:'SYNTH_FAIL',error:String(e.stack||e)});}
    console.log(JSON.stringify(summary.at(-1)));
  }
- if(process.env.PNR_ONLY || process.env.PNR_CASE_DIR){
+ if(process.env.PNR_ONLY || selectedCase){
    const passing=summary.filter(r=>r.variant==='original'&&r.result==='PASS');
    const allGood=passing.length===cases.length;
    console.log('SERV_TARGETED_SUMMARY '+JSON.stringify(summary));
