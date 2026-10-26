@@ -1,0 +1,66 @@
+name: Frontier Grade from pinned source
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/frontier-grade-source.yml'
+      - 'frontier/**'
+      - 'tests/headless-pnr-*.cjs'
+      - 'tests/headless-serv-bitgen.cjs'
+      - 'tests/headless-serv-fasm-audit.cjs'
+      - 'PRODUCTION_GRADE/index.html'
+      - 'PRODUCTION_GRADE/*.js'
+      - 'PRODUCTION_GRADE/DEFAULTS/**'
+      - 'PRODUCTION_GRADE/TESTS/**'
+
+jobs:
+  source-to-index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
+
+      - name: Install native build prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential cmake curl git libboost-all-dev libeigen3-dev python3-venv
+
+      - name: Build the browser runtime from pinned sources
+        env:
+          FRONTIER_JOBS: '2'
+        run: |
+          bash frontier/build-from-source.sh "$GITHUB_WORKSPACE" "$RUNNER_TEMP/Frontier_Grade"
+
+      - name: Install the pinned synthesis oracle
+        run: |
+          mkdir -p "$RUNNER_TEMP/frontier-toolchain"
+          npm install --prefix "$RUNNER_TEMP/frontier-toolchain" --no-audit --no-fund @yowasp/yosys@0.70.1258
+
+      - name: Run SRL16E through synthesis, PNR, FASM and bitgen
+        env:
+          FPGA_ASSET_DIR: ${{ runner.temp }}/Frontier_Grade
+          FPGA_TOOLCHAIN_ROOT: ${{ runner.temp }}/frontier-toolchain
+          PNR_CASE_DIR: ${{ github.workspace }}/frontier/oracle/SRL16E
+          PNR_OUTPUT_DIR: ${{ runner.temp }}/frontier-oracle
+          PNR_ONLY: SRL16E
+          PNR_TOP: top
+        run: |
+          node tests/headless-pnr-matrix.cjs
+          result="$RUNNER_TEMP/frontier-oracle/oracle_SRL16E"
+          test -f "$result/original.fasm"
+          grep -q '\.SRL$' "$result/original.fasm"
+          PNR_RESULT_DIR="$result" node tests/headless-serv-fasm-audit.cjs
+          PNR_RESULT_DIR="$result" node tests/headless-serv-bitgen.cjs
+          test -s "$result/SRL16E.bit"
+
+      - name: Upload the promoted runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: Frontier_Grade-xc7s50
+          path: ${{ runner.temp }}/Frontier_Grade/
+          if-no-files-found: error
