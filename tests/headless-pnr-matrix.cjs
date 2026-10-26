@@ -3,6 +3,7 @@
 const { Worker } = require('node:worker_threads');
 const fs=require('node:fs'),path=require('node:path');
 const {pathToFileURL}=require('node:url');
+const cp=require('node:child_process');
 const zlib=require('node:zlib');
 const crypto=require('node:crypto');
 const {performance}=require('node:perf_hooks');
@@ -42,16 +43,23 @@ async function synth(dir,slug){
  const topName=process.env.PNR_TOP || 'top';
  if(!/^[A-Za-z_][A-Za-z_0-9]*$/.test(topName))throw Error('Invalid PNR_TOP');
  const script=`read_verilog -sv source_0.v; hierarchy -top ${topName}; proc; opt; synth_xilinx -flatten -abc9 -arch xc7 -top ${topName}; write_json synth.json`;
- const yosysEntry=require.resolve('@yowasp/yosys',{paths:[toolchainRoot,root]});
- const {runYosys}=await import(pathToFileURL(yosysEntry).href);
- let r;
- try { r=await runYosys(['-p',script],{'source_0.v':src}); }
- catch(e) { r=e; }
- const synthJson=r.files?.['synth.json'] ?? r['synth.json'];
- fs.writeFileSync(path.join(scratch,'yosys.log'),String(r.stdout||r.stderr||r.message||''));
- if(synthJson){
-   const content=typeof synthJson==='string'?synthJson:new TextDecoder().decode(synthJson);
-   fs.writeFileSync(path.join(scratch,'synth.json'),content);
+ let r,synthJson;
+ try {
+   const yosysEntry=require.resolve('@yowasp/yosys',{paths:[toolchainRoot,root]});
+   const {runYosys}=await import(pathToFileURL(yosysEntry).href);
+   try { r=await runYosys(['-p',script],{'source_0.v':src}); }
+   catch(e) { r=e; }
+   synthJson=r.files?.['synth.json'] ?? r['synth.json'];
+   fs.writeFileSync(path.join(scratch,'yosys.log'),String(r.stdout||r.stderr||r.message||''));
+   if(synthJson){
+     const content=typeof synthJson==='string'?synthJson:new TextDecoder().decode(synthJson);
+     fs.writeFileSync(path.join(scratch,'synth.json'),content);
+   }
+ } catch(e) {
+   if(e.code!=='MODULE_NOT_FOUND')throw e;
+   r=cp.spawnSync('yowasp-yosys',['-p',script],{cwd:scratch,encoding:'utf8',timeout:180000,maxBuffer:32*1024*1024});
+   fs.writeFileSync(path.join(scratch,'yosys.log'),(r.stdout||'')+'\nSTDERR\n'+(r.stderr||''));
+   if(r.error||r.status!==0)throw Error('Yosys CLI failed '+String(r.error||r.status));
  }
  if(fs.existsSync(path.join(scratch,'synth.json'))){
    const json=JSON.parse(fs.readFileSync(path.join(scratch,'synth.json'),'utf8'));
