@@ -1,0 +1,6 @@
+set_property -dict {PACKAGE_PIN N15 IOSTANDARD LVCMOS33} [get_ports clk]
+create_clock -period 10.000 -name sys_clk [get_ports clk]
+set_property -dict {PACKAGE_PIN U17 IOSTANDARD TMDS_33} [get_ports hdmi_p]
+set_property -dict {PACKAGE_PIN U18 IOSTANDARD TMDS_33} [get_ports hdmi_n]
+set_property CFGBVS VCCO [current_design]
+set_property CONFIG_VOLTAGE 3.3 [current_design]
