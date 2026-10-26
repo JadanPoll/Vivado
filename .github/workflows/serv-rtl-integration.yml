@@ -1,0 +1,22 @@
+name: SERV RTL Integration
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/serv-rtl-integration.yml'
+      - 'tests/serv_soc_tb.sv'
+      - 'PRODUCTION_GRADE/DEFAULTS/serv_blinky/top.v'
+jobs:
+  cpu-memory-gpio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install lightweight Verilog simulator
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq iverilog
+      - name: Simulate actual full SoC through first GPIO store
+        run: |
+          iverilog -g2012 -s serv_soc_tb -o /tmp/serv_soc_tb.vvp \
+            tests/serv_soc_tb.sv PRODUCTION_GRADE/DEFAULTS/serv_blinky/top.v
+          vvp /tmp/serv_soc_tb.vvp
