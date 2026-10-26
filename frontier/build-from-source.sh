@@ -75,6 +75,8 @@ checkout https://github.com/emscripten-core/emsdk.git "$emsdk_commit" "$emsdk"
 set +u
 source "$emsdk/emsdk_env.sh"
 set -u
+wasm_opt="$emsdk/upstream/bin/wasm-opt"
+test -x "$wasm_opt"
 
 boost="$work/boost_1_83_0"
 curl -fsSL https://archives.boost.io/release/1.83.0/source/boost_1_83_0.tar.gz \
@@ -131,7 +133,7 @@ emcmake cmake -S "$nextpnr" -B "$wasm_build" -DARCH=xilinx \
   -DCMAKE_CXX_FLAGS_RELEASE='' -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 cmake --build "$wasm_build" --target nextpnr-xilinx --parallel "$jobs"
-wasm-opt -Oz --enable-simd --enable-bulk-memory --enable-nontrapping-float-to-int \
+"$wasm_opt" -Oz --enable-simd --enable-bulk-memory --enable-nontrapping-float-to-int \
   --enable-sign-ext --enable-mutable-globals --strip-debug --strip-producers \
   "$wasm_build/nextpnr-xilinx.wasm" -o "$work/nextpnr-xilinx.opt.wasm"
 
@@ -152,7 +154,7 @@ emcmake cmake -S "$prjxray" -B "$frames_build" -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_EXE_LINKER_FLAGS="-Os -fexceptions -mbulk-memory -mnontrapping-fptoint -s ALLOW_MEMORY_GROWTH=1 -s INITIAL_MEMORY=67108864 -s MALLOC=emmalloc -s ENVIRONMENT=worker -s EXPORTED_FUNCTIONS=['_main'] -s EXIT_RUNTIME=0 -s ERROR_ON_UNDEFINED_SYMBOLS=0" \
   -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 cmake --build "$frames_build" --target xc7frames2bit --parallel "$jobs"
-wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int \
+"$wasm_opt" -Oz --enable-bulk-memory --enable-nontrapping-float-to-int \
   --enable-sign-ext --enable-mutable-globals --strip-debug --strip-producers \
   "$frames_build/tools/xc7frames2bit.wasm" -o "$work/xc7frames2bit.opt.wasm"
 
