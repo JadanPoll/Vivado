@@ -63,9 +63,12 @@ def archived_member(ledger, name, filename):
 
 
 def evidence_exists(ledger, name, filename):
-    return (specimen_dir(ledger, name) / filename).is_file() or archived_member(
-        ledger, name, filename
-    ) is not None
+    if (specimen_dir(ledger, name) / filename).is_file():
+        return True
+    if archived_member(ledger, name, filename) is not None:
+        return True
+    snapshot = ledger["specimens"][name].get("snapshot", {})
+    return filename in snapshot.get("files", [])
 
 
 def evidence_text(ledger, name, filename):
@@ -73,13 +76,27 @@ def evidence_text(ledger, name, filename):
     if path.is_file():
         return path.read_text(encoding="utf-8", errors="replace")
     archived = archived_member(ledger, name, filename)
-    return archived.decode("utf-8", errors="replace") if archived is not None else None
+    if archived is not None:
+        return archived.decode("utf-8", errors="replace")
+    snapshot = ledger["specimens"][name].get("snapshot", {})
+    if filename == "drc.txt" and "drc_markers" in snapshot:
+        return "\n".join(snapshot["drc_markers"])
+    if filename == "cells.tsv" and "cell_ref_counts" in snapshot:
+        rows = ["cell\tref\tloc\tbel"]
+        for ref, count in snapshot["cell_ref_counts"].items():
+            rows.extend(f"snapshot_{ref}_{index}\t{ref}\tSNAPSHOT\tSNAPSHOT" for index in range(count))
+        return "\n".join(rows)
+    return None
 
 
 def summary_statuses(ledger):
     root = ROOT / ledger["specimen_root"]
     paths = sorted(root.glob("summary*.tsv"))
-    statuses = {}
+    statuses = {
+        name: specimen.get("snapshot", {}).get("status")
+        for name, specimen in ledger["specimens"].items()
+        if specimen.get("snapshot", {}).get("status")
+    }
     for path in paths:
         with path.open(encoding="utf-8", newline="") as handle:
             rows = csv.DictReader(handle, delimiter="\t")
@@ -201,6 +218,7 @@ def evaluate(ledger):
 def print_status(ledger, result):
     print("FRONTIER EVIDENCE STATUS")
     print("Mission:", result["mission"])
+    print("Evidence:", ledger.get("snapshot_provenance", "live artifacts only"))
     print()
     counts = {}
     for item in result["claims"]:
