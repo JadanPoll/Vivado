@@ -56,7 +56,9 @@ checkout "$(lock_value nextpnrXilinx.metadataReconstruction.baseRepository)" \
   "$(lock_value nextpnrXilinx.metadataReconstruction.baseCommit)" "$meta"
 cp -a "$meta/artix7" "$meta/spartan7"
 cp "$nextpnr/xilinx/site_type_XADC_meta.json" "$meta/spartan7/site_type_XADC.json"
-cp "$nextpnr/xilinx/segbits_monitor_bot.db" "$db/spartan7/segbits_monitor_bot.db"
+# Keep the mixed-tile overlay out of the Project X-Ray database. The map
+# generator consumes it explicitly below; installing it as MONITOR_BOT data
+# also misclassifies its LIOI3_TBYTESRC records before the overlay pass.
 
 native="$work/nextpnr-native"
 cmake -S "$nextpnr" -B "$native" -DARCH=xilinx -DWITH_PYTHON=OFF \
