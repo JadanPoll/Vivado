@@ -25,8 +25,8 @@
       "generator": "frontier/generate-fasm-map-v7.py",
       "prjxrayDb": "0a0addedd73e7e4139d52a6d8db4258763e0f1f3",
       "xadcOverlay": "nextpnr-xilinx@175f72919f19ee7145ef7b876f499c193e5cbb6e:xilinx/segbits_monitor_bot.db",
-      "rawBytes": 6519687,
-      "rawSha256": "353012d0e587eb19f5fbd339991708fc7fa851cfb01a903a037915266598fca7"
+      "rawBytes": 6519904,
+      "rawSha256": "4c879beeb10b8fd62f3c8c21e3a7026437b004fc021b4a1d674578553754a209"
     }
   },
   "prjxray": {
